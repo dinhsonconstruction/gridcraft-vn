@@ -285,9 +285,14 @@ fn parse_date(t: &str, sys: DateSystem) -> Option<(f64, &'static str)> {
         {
             return valid_ymd(sys, y, m, d).map(|s| (s, "yyyy-mm-dd"));
         }
-        if let (Some(m), Some(d), Some(y)) = (num(a), num(b), num(c)) {
+        if let (Some(d), Some(m), Some(y)) = (num(a), num(b), num(c)) {
             let y = if c.len() <= 2 { if y < 30 { 2000 + y } else { 1900 + y } } else { y };
-            return valid_ymd(sys, y, m, d).map(|s| (s, "m/d/yyyy"));
+            if let Some(s) = valid_ymd(sys, y, m, d) {
+                return Some((s, "dd/mm/yyyy"));
+            }
+            if let Some(s) = valid_ymd(sys, y, d, m) {
+                return Some((s, "dd/mm/yyyy"));
+            }
         }
         // 4-Mar-2026
         if let (Some(d), Some(m), Some(y)) = (num(a), month_from_name(b), num(c)) {
@@ -299,14 +304,14 @@ fn parse_date(t: &str, sys: DateSystem) -> Option<(f64, &'static str)> {
         let (a, b) = (parts[0].trim(), parts[1].trim());
         // m/d in the current year is ambiguous without a clock; use month/day of 2026? Excel uses
         // the current year. We accept d-mmm / mmm-d only with month names, and m/d → current year.
-        if let (Some(m), Some(d)) = (num(a), num(b)) {
+        if let (Some(d), Some(m)) = (num(a), num(b)) {
             let y = current_year();
             if (1..=12).contains(&m) && (1..=31).contains(&d) {
-                return valid_ymd(sys, y, m, d).map(|s| (s, "d-mmm"));
+                return valid_ymd(sys, y, m, d).map(|s| (s, "dd/mm/yyyy"));
             }
             // m/yyyy
-            if (1..=12).contains(&m) && b.len() == 4 {
-                return valid_ymd(sys, d, m, 1).map(|s| (s, "mmm-yy"));
+            if (1..=12).contains(&d) && b.len() == 4 {
+                return valid_ymd(sys, m, d, 1).map(|s| (s, "mmm-yy"));
             }
         }
         if let (Some(d), Some(m)) = (num(a), month_from_name(b)) {
@@ -381,7 +386,7 @@ fn parse_datetime(t: &str, sys: DateSystem) -> Option<(f64, Option<&'static str>
             continue;
         }
         if let (Some((d, _)), Some((tf, _, _))) = (t.get(..i).and_then(|a| parse_date(a, sys)), parse_time(b)) {
-            return Some((d + tf, Some("m/d/yyyy h:mm")));
+            return Some((d + tf, Some("dd/mm/yyyy h:mm")));
         }
     }
     None

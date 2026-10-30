@@ -408,6 +408,12 @@ pub fn editor_widget(app: &mut SheetApp, ui: &mut egui::Ui, id: egui::Id, font: 
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, Key::U)) {
             app.run_or_alert("view.expandFormulaBar", json!({}));
         }
+        // Cmd/Ctrl+B, Cmd/Ctrl+I, Cmd/Ctrl+U toggle cell font formatting while editing.
+        for (k, cmd) in [(Key::B, "home.bold"), (Key::I, "home.italic"), (Key::U, "home.underline")] {
+            if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, k) || i.consume_key(egui::Modifiers::CTRL, k)) {
+                app.run_or_alert(cmd, json!({}));
+            }
+        }
     }
     // The text widget.
     let refs = formula_refs(&ed.text);

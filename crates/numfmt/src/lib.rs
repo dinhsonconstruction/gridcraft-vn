@@ -152,7 +152,14 @@ impl NumberFormat {
                 inner: Arc::new(Inner { code: code.to_string(), general: true, sections: Vec::new(), num_sections: 0, text_section: None }),
             };
         }
-        let sections = parse::parse_sections(code);
+        let parse_code = if trimmed.eq_ignore_ascii_case("m/d/yyyy") || trimmed.eq_ignore_ascii_case("mm/dd/yyyy") {
+            "dd/mm/yyyy"
+        } else if trimmed.eq_ignore_ascii_case("m/d/yyyy h:mm") || trimmed.eq_ignore_ascii_case("mm/dd/yyyy h:mm") {
+            "dd/mm/yyyy h:mm"
+        } else {
+            code
+        };
+        let sections = parse::parse_sections(parse_code);
         let len = sections.len();
         let last_is_text = sections.last().is_some_and(|s| s.kind == SecKind::Text);
         let text_section = if len >= 4 {

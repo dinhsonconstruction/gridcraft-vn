@@ -17,10 +17,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use gridcraft_core::{CellRef, DateSystem, MAX_COLS, MAX_ROWS, RangeRef, Value};
-use gridcraft_model::{CalcMode, CalcSettings, Cell, DefinedName, Formula, LineInfo, NumFmt, Sheet, Style, StyleId, Visibility, Workbook};
+use gridcraft_model::{
+    Alignment, BorderLine, BorderStyle, Borders, CalcMode, CalcSettings, Cell, Color, DefinedName, Fill, Font, Formula, HAlign, LineInfo, NumFmt,
+    Orientation, PatternType, Sheet, Style, StyleId, StyleTable, Underline, VAlign, VertAlign, Visibility, Workbook, style::Protection,
+};
 
 use crate::cfb::Compound;
-use crate::tables::{builtin_format, col_width_to_px, pt_to_px};
+use crate::tables::{INDEXED, builtin_format, col_width_to_px, paper_name, pt_to_px};
 use crate::{IoError, ReadReport};
 use formula::{Links, Mode, SupBook, Unsupported, Xti, cell_error, decode};
 use records::{Cursor, Record, Records};
@@ -127,15 +130,212 @@ struct Lbl {
 }
 
 #[derive(Default)]
+struct XfRaw {
+    ifnt: u16,
+    ifmt: u16,
+    flags: u16,
+    align: u8,
+    rot: u8,
+    ind: u8,
+    used: u8,
+    b1: u16,
+    b2: u16,
+    fls: u32,
+    fill: u16,
+}
+
+#[derive(Default)]
 struct Globals {
     sheets: Vec<BoundSheet>,
     date1904: bool,
     formats: HashMap<u16, String>,
-    xf_formats: Vec<u16>,
+    fonts: Vec<(Font, u16)>,
+    palette: Vec<u32>,
+    xfs: Vec<XfRaw>,
     sst: Vec<Arc<str>>,
     links: Links,
     names: Vec<Lbl>,
     precision_as_displayed: bool,
+}
+
+fn xls_color(palette: &[u32], icv: u16) -> Color {
+    match icv {
+        0 | 0x0040 | 0x0041 | 0x7FFF => Color::Auto,
+        _ => palette
+            .get(usize::from(icv))
+            .or_else(|| palette.get(usize::from(icv & 0x3F)))
+            .copied()
+            .map_or(Color::Auto, Color::Rgb),
+    }
+}
+
+fn xls_border_style(dg: u8) -> BorderStyle {
+    match dg {
+        1 => BorderStyle::Thin,
+        2 => BorderStyle::Medium,
+        3 => BorderStyle::Dashed,
+        4 => BorderStyle::Dotted,
+        5 => BorderStyle::Thick,
+        6 => BorderStyle::Double,
+        7 => BorderStyle::Hair,
+        8 => BorderStyle::MediumDashed,
+        9 => BorderStyle::DashDot,
+        10 => BorderStyle::MediumDashDot,
+        11 => BorderStyle::DashDotDot,
+        12 => BorderStyle::MediumDashDotDot,
+        13 => BorderStyle::SlantDashDot,
+        _ => BorderStyle::None,
+    }
+}
+
+fn xls_pattern(pat: u8) -> PatternType {
+    match pat {
+        1 => PatternType::Solid,
+        2 => PatternType::Gray50,
+        3 => PatternType::Gray75,
+        4 => PatternType::Gray25,
+        5 => PatternType::DarkHorizontal,
+        6 => PatternType::DarkVertical,
+        7 => PatternType::DarkDown,
+        8 => PatternType::DarkUp,
+        9 => PatternType::DarkGrid,
+        10 => PatternType::DarkTrellis,
+        11 => PatternType::LightHorizontal,
+        12 => PatternType::LightVertical,
+        13 => PatternType::LightDown,
+        14 => PatternType::LightUp,
+        15 => PatternType::LightGrid,
+        16 => PatternType::LightTrellis,
+        17 => PatternType::Gray125,
+        18 => PatternType::Gray0625,
+        _ => PatternType::None,
+    }
+}
+
+fn parse_font(c: &mut Cursor<'_, '_>) -> Result<(Font, u16), IoError> {
+    let dy_height = c.u16()?;
+    let grbit = c.u16()?;
+    let icv = c.u16()?;
+    let bls = c.u16()?;
+    let sss = c.u16()?;
+    let uls = c.u8()?;
+    let family = c.u8()?;
+    let charset = c.u8()?;
+    let _reserved = c.u8()?;
+    let name = c.short_string()?;
+    let size = if dy_height == 0 {
+        gridcraft_model::DEFAULT_FONT_SIZE
+    } else {
+        (f32::from(dy_height) / 20.0).clamp(1.0, 409.0)
+    };
+    let font = Font {
+        name: if name.trim().is_empty() { gridcraft_model::DEFAULT_FONT.into() } else { name },
+        size,
+        bold: bls >= 0x02BC,
+        italic: grbit & 0x0002 != 0,
+        underline: match uls {
+            1 => Underline::Single,
+            2 => Underline::Double,
+            0x21 => Underline::SingleAccounting,
+            0x22 => Underline::DoubleAccounting,
+            _ => Underline::None,
+        },
+        strike: grbit & 0x0008 != 0,
+        color: Color::Auto,
+        vert: match sss {
+            1 => VertAlign::Superscript,
+            2 => VertAlign::Subscript,
+            _ => VertAlign::Baseline,
+        },
+        charset: (charset > 0).then_some(charset),
+        family: (family > 0).then_some(family),
+    };
+    Ok((font, icv))
+}
+
+fn xf_to_style(xf: &XfRaw, g: &Globals) -> Style {
+    let font_idx = if xf.ifnt >= 4 { usize::from(xf.ifnt - 1) } else { usize::from(xf.ifnt) };
+    let font = g
+        .fonts
+        .get(font_idx)
+        .map(|(f, icv)| {
+            let mut f = f.clone();
+            f.color = xls_color(&g.palette, *icv);
+            f
+        })
+        .unwrap_or_default();
+    let code = g
+        .formats
+        .get(&xf.ifmt)
+        .map(String::as_str)
+        .or_else(|| builtin_format(u32::from(xf.ifmt)))
+        .unwrap_or("General");
+    let num_fmt = NumFmt::new(code);
+    let align = if xf.align != 0 || xf.rot != 0 || xf.ind != 0 || xf.used != 0 || !g.fonts.is_empty() {
+        Alignment {
+            h: match xf.align & 7 {
+                1 => HAlign::Left,
+                2 => HAlign::Center,
+                3 => HAlign::Right,
+                4 => HAlign::Fill,
+                5 => HAlign::Justify,
+                6 => HAlign::CenterAcross,
+                7 => HAlign::Distributed,
+                _ => HAlign::General,
+            },
+            v: match (xf.align >> 4) & 7 {
+                0 => VAlign::Top,
+                1 => VAlign::Center,
+                3 => VAlign::Justify,
+                4 => VAlign::Distributed,
+                _ => VAlign::Bottom,
+            },
+            wrap: xf.align & 0x08 != 0,
+            shrink: xf.ind & 0x10 != 0,
+            indent: xf.ind & 0x0F,
+            rotation: match xf.rot {
+                0..=90 => i16::from(xf.rot),
+                91..=180 => 90 - i16::from(xf.rot),
+                255 => 255,
+                _ => 0,
+            },
+        }
+    } else {
+        Alignment::default()
+    };
+    let border_line = |dg: u8, icv: u16| -> BorderLine {
+        let style = xls_border_style(dg);
+        if style == BorderStyle::None {
+            BorderLine::default()
+        } else {
+            BorderLine { style, color: xls_color(&g.palette, icv) }
+        }
+    };
+    let diag = border_line(((xf.fls >> 21) & 0x0F) as u8, ((xf.fls >> 14) & 0x7F) as u16);
+    let borders = Borders {
+        left: border_line((xf.b1 & 0x0F) as u8, xf.b2 & 0x7F),
+        right: border_line(((xf.b1 >> 4) & 0x0F) as u8, (xf.b2 >> 7) & 0x7F),
+        top: border_line(((xf.b1 >> 8) & 0x0F) as u8, (xf.fls & 0x7F) as u16),
+        bottom: border_line(((xf.b1 >> 12) & 0x0F) as u8, ((xf.fls >> 7) & 0x7F) as u16),
+        diag_down: if xf.b2 & 0x4000 != 0 { diag } else { BorderLine::default() },
+        diag_up: if xf.b2 & 0x8000 != 0 { diag } else { BorderLine::default() },
+    };
+    let pat = xls_pattern(((xf.fls >> 26) & 0x3F) as u8);
+    let fill = if pat == PatternType::None {
+        Fill::default()
+    } else {
+        Fill {
+            pattern: pat,
+            fg: xls_color(&g.palette, xf.fill & 0x7F),
+            bg: xls_color(&g.palette, (xf.fill >> 7) & 0x7F),
+        }
+    };
+    let protection = if !g.fonts.is_empty() || xf.flags != 0 {
+        Protection { locked: xf.flags & 0x0001 != 0, hidden: xf.flags & 0x0002 != 0 }
+    } else {
+        Protection::default()
+    };
+    Style { font, fill, borders, align, num_fmt, protection, dxf_stated: Default::default() }
 }
 
 /// Reads an Excel 97-2003 workbook. Inspect the report's warnings for what was skipped.
@@ -161,19 +361,12 @@ pub(crate) fn read_xls_with(bytes: &[u8], mut budget: Budget) -> Result<(Workboo
     let mut wb = Workbook::new();
     wb.sheets.clear();
     wb.date_system = if g.date1904 { DateSystem::D1904 } else { DateSystem::D1900 };
-    // One model style per XF: only the number format is imported.
-    let styles: Vec<StyleId> = g
-        .xf_formats
-        .iter()
-        .map(|ifmt| {
-            let code = g.formats.get(ifmt).map(String::as_str).or_else(|| builtin_format(u32::from(*ifmt))).unwrap_or("General");
-            if code.eq_ignore_ascii_case("General") {
-                StyleId::DEFAULT
-            } else {
-                wb.styles.intern(Style { num_fmt: NumFmt::new(code), ..Style::default() })
-            }
-        })
-        .collect();
+    if let Some((f0, icv0)) = g.fonts.first() {
+        let mut f = f0.clone();
+        f.color = xls_color(&g.palette, *icv0);
+        wb.styles = StyleTable::with_default(Style { font: f, ..Style::default() });
+    }
+    let styles: Vec<StyleId> = g.xfs.iter().map(|xf| wb.styles.intern(xf_to_style(xf, &g))).collect();
 
     // BoundSheet8 index → model sheet index.
     let mut model_index: Vec<Option<usize>> = Vec::with_capacity(g.sheets.len());
@@ -210,7 +403,7 @@ pub(crate) fn read_xls_with(bytes: &[u8], mut budget: Budget) -> Result<(Workboo
     // The overview comes first.
     report.warnings.insert(
         0,
-        "Imported from an Excel 97-2003 (.xls) workbook: values, formulas, number formats, merged cells, column widths, row heights and defined names were read. Fonts, fills, borders, charts, pictures, comments and other features are not imported yet. Save as .xlsx; saving .xls is not supported.".into(),
+        "Imported from an Excel 97-2003 (.xls) workbook: values, formulas, number formats, fonts, borders, fills, alignments, page setup, merged cells, column widths, row heights and defined names were read. Save as .xlsx; saving .xls is not supported.".into(),
     );
     Ok((wb, report))
 }
@@ -237,7 +430,7 @@ fn globals(stream: &[u8], budget: &mut Budget, report: &mut ReadReport) -> Resul
     if dt != 0x0005 {
         return Err(invalid("the Workbook stream does not start with the workbook globals"));
     }
-    let mut g = Globals::default();
+    let mut g = Globals { palette: INDEXED.to_vec(), ..Globals::default() };
     let mut offsets = std::collections::HashSet::new();
     while let Some(rec) = recs.next_record()? {
         budget.record()?;
@@ -245,6 +438,23 @@ fn globals(stream: &[u8], budget: &mut Budget, report: &mut ReadReport) -> Resul
         match rec.id {
             EOF => break,
             0x002F => return Err(invalid(ENCRYPTED)),
+            0x0031 if g.fonts.len() < 4096 => {
+                if let Ok(f) = parse_font(&mut c) {
+                    g.fonts.push(f);
+                }
+            }
+            0x0092 => {
+                if let Ok(n) = c.u16() {
+                    let count = usize::from(n).min(56).min(c.remaining() / 4);
+                    for i in 0..count {
+                        if let (Ok(r), Ok(gr), Ok(b), Ok(_)) = (c.u8(), c.u8(), c.u8(), c.u8())
+                            && let Some(slot) = g.palette.get_mut(8 + i)
+                        {
+                            *slot = ((r as u32) << 16) | ((gr as u32) << 8) | (b as u32);
+                        }
+                    }
+                }
+            }
             0x0085 => {
                 if g.sheets.len() >= MAX_SHEETS {
                     return Err(IoError::TooLarge("XLS: too many sheets".into()));
@@ -280,9 +490,27 @@ fn globals(stream: &[u8], budget: &mut Budget, report: &mut ReadReport) -> Resul
                 budget.text(code.len())?;
                 g.formats.insert(ifmt, code);
             }
-            0x00E0 if g.xf_formats.len() < MAX_XFS => {
-                c.u16()?;
-                g.xf_formats.push(c.u16()?);
+            0x00E0 if g.xfs.len() < MAX_XFS => {
+                let ifnt = c.u16()?;
+                let ifmt = c.u16()?;
+                let xf = if c.remaining() >= 16 {
+                    XfRaw {
+                        ifnt,
+                        ifmt,
+                        flags: c.u16()?,
+                        align: c.u8()?,
+                        rot: c.u8()?,
+                        ind: c.u8()?,
+                        used: c.u8()?,
+                        b1: c.u16()?,
+                        b2: c.u16()?,
+                        fls: c.u32()?,
+                        fill: c.u16()?,
+                    }
+                } else {
+                    XfRaw { ifnt, ifmt, ..XfRaw::default() }
+                };
+                g.xfs.push(xf);
             }
             0x00FC => g.sst = shared_strings(&mut c, budget)?,
             0x01AE => {
@@ -424,6 +652,8 @@ struct SheetState<'g> {
     dropped: usize,
     unsupported: Vec<&'static str>,
     calc: CalcSettings,
+    ws_fit_to_page: bool,
+    setup_fit: Option<(u16, u16)>,
 }
 
 impl SheetState<'_> {
@@ -565,6 +795,8 @@ fn worksheet(
         dropped: 0,
         unsupported: vec![],
         calc: CalcSettings::default(),
+        ws_fit_to_page: false,
+        setup_fit: None,
     };
     let mut depth = 1usize;
     while let Some(rec) = recs.next_record()? {
@@ -587,6 +819,11 @@ fn worksheet(
             _ => {}
         }
         sheet_record(&rec, &mut st, budget, report)?;
+    }
+    if st.ws_fit_to_page
+        && let Some((fw, fh)) = st.setup_fit
+    {
+        st.sheet.print.fit_to = Some((fw, fh));
     }
     // Shared and array formulas: their definitions follow the first cell that uses them.
     let (arrays, shared) = (std::mem::take(&mut st.arrays), std::mem::take(&mut st.shared));
@@ -726,6 +963,13 @@ fn sheet_record(rec: &Record<'_>, st: &mut SheetState<'_>, budget: &mut Budget, 
                 }
             }
         }
+        0x0055 if c.remaining() >= 2 => {
+            let chars = c.u16()?;
+            if chars > 0 {
+                let char_scale = st.g.fonts.first().map_or(1.0, |(f, _)| (f64::from(f.size) / 11.0).clamp(0.85, 1.0));
+                st.sheet.default_col_width = col_width_to_px((f64::from(chars) + 0.43) * char_scale);
+            }
+        }
         0x007D => {
             let (first, last) = (c.u16()?, c.u16()?);
             let width = c.u16()?;
@@ -736,7 +980,8 @@ fn sheet_record(rec: &Record<'_>, st: &mut SheetState<'_>, budget: &mut Budget, 
                 return Ok(());
             }
             let mut info = LineInfo::default();
-            let px = col_width_to_px(f64::from(width) / 256.0);
+            let char_scale = st.g.fonts.first().map_or(1.0, |(f, _)| (f64::from(f.size) / 11.0).clamp(0.85, 1.0));
+            let px = col_width_to_px((f64::from(width) / 256.0) * char_scale);
             if flags & 0x0002 != 0 || px != st.sheet.default_col_width {
                 info.size = Some(px);
             }
@@ -793,6 +1038,51 @@ fn sheet_record(rec: &Record<'_>, st: &mut SheetState<'_>, budget: &mut Budget, 
             st.sheet.show_zeros = on(0x0010);
             st.sheet.right_to_left = on(0x0040);
         }
+        WSBOOL if c.remaining() >= 2 => {
+            st.ws_fit_to_page = c.u16()? & 0x0100 != 0;
+        }
+        0x00A1 if c.remaining() >= 34 => {
+            let paper = c.u16()?;
+            let scale = c.u16()?;
+            let _page_start = c.u16()?;
+            let fit_w = c.u16()?;
+            let fit_h = c.u16()?;
+            let grbit = c.u16()?;
+            let _res = c.u16()?;
+            let _vres = c.u16()?;
+            let hdr = c.f64()?;
+            let ftr = c.f64()?;
+            if let Some(name) = paper_name(u32::from(paper)) {
+                st.sheet.print.paper = name.to_string();
+            }
+            if grbit & 0x0004 == 0 && (10..=400).contains(&scale) {
+                st.sheet.print.scale = scale;
+            }
+            if grbit & 0x0040 == 0 {
+                st.sheet.print.orientation = if grbit & 0x0002 != 0 {
+                    Orientation::Portrait
+                } else {
+                    Orientation::Landscape
+                };
+            }
+            st.setup_fit = Some((fit_w, fit_h));
+            if hdr.is_finite() && (0.0..=20.0).contains(&hdr) {
+                st.sheet.print.margins[4] = hdr as f32;
+            }
+            if ftr.is_finite() && (0.0..=20.0).contains(&ftr) {
+                st.sheet.print.margins[5] = ftr as f32;
+            }
+        }
+        0x0026..=0x0029 if c.remaining() >= 8 => {
+            let m = c.f64()?;
+            if m.is_finite() && (0.0..=20.0).contains(&m) {
+                st.sheet.print.margins[usize::from(rec.id - 0x0026)] = m as f32;
+            }
+        }
+        0x0083 if c.remaining() >= 2 => st.sheet.print.center_h = c.u16()? != 0,
+        0x0084 if c.remaining() >= 2 => st.sheet.print.center_v = c.u16()? != 0,
+        0x002A if c.remaining() >= 2 => st.sheet.print.headings = c.u16()? != 0,
+        0x002B if c.remaining() >= 2 => st.sheet.print.gridlines = c.u16()? != 0,
         0x001C => report.warn("Cell comments in .xls files are not imported yet."),
         0x00EC => report.warn("Pictures, charts and shapes in .xls files are not imported yet."),
         0x01B0 | 0x0879 => report.warn("Conditional formatting in .xls files is not imported yet."),

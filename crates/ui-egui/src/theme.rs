@@ -304,11 +304,13 @@ pub fn cell_family(name: &str, bold: bool, italic: bool) -> FontFamily {
     if lower.contains("courier") || lower.contains("mono") || lower.contains("consolas") {
         return FontFamily::Name(MONO.into());
     }
-    if lower.contains("times")
-        || lower.contains("georgia")
-        || lower.contains("cambria")
-        || lower.contains("serif") && !lower.contains("sans")
-        || lower.contains("garamond")
+    if !bold
+        && !italic
+        && (lower.contains("times")
+            || lower.contains("georgia")
+            || lower.contains("cambria")
+            || lower.contains("serif") && !lower.contains("sans")
+            || lower.contains("garamond"))
     {
         return FontFamily::Name(SERIF.into());
     }
@@ -461,6 +463,15 @@ fn candidates(role: &str) -> Vec<(String, u32)> {
             add("/usr/share/fonts/liberation-sans-fonts/LiberationSans-Bold.ttf".into(), 0);
         }
         "cell" | "cell-bold" | "cell-italic" | "cell-bold-italic" => {
+            let tnr_mac = match role {
+                "cell" => "Times New Roman.ttf",
+                "cell-bold" => "Times New Roman Bold.ttf",
+                "cell-italic" => "Times New Roman Italic.ttf",
+                _ => "Times New Roman Bold Italic.ttf",
+            };
+            add(format!("{mac_sup}/{tnr_mac}"), 0);
+            add(format!("/Library/Fonts/{tnr_mac}"), 0);
+            add(home_fonts(tnr_mac), 0);
             let (carlito, calibri_win, calibri_mac, arial_mac, arial_win, lib, dejavu) = match role {
                 "cell" => {
                     ("Carlito-Regular.ttf", "calibri.ttf", "Calibri.ttf", "Arial.ttf", "arial.ttf", "LiberationSans-Regular.ttf", "DejaVuSans.ttf")
@@ -608,8 +619,20 @@ pub fn font_definitions_with(language: crate::i18n::Language, used: &[String]) -
         bound.push(role.to_string());
     }
     // Installed workbook fonts, so a cell's chosen font actually renders in it.
+    // Only mark bold/italic roles as bound when the installed family actually has a bold/italic
+    // face; single-weight system fonts (e.g. Microsoft Sans Serif on macOS) fall back to CELL_BOLD
+    // / CELL_ITALIC when styled so bold/italic remains visually distinct.
     for family in crate::fonts::installed_among(used) {
-        bound.extend(crate::fonts::bind_family(&mut fonts, &family));
+        let faces = crate::fonts::faces_of(&family);
+        let has_bold = faces.iter().any(|f| f.weight >= 600.0);
+        let has_italic = faces.iter().any(|f| f.italic);
+        for role in crate::fonts::bind_faces(&mut fonts, &family, &faces) {
+            let needs_bold = role.ends_with(":bn") || role.ends_with(":bi");
+            let needs_italic = role.ends_with(":ni") || role.ends_with(":bi");
+            if (!needs_bold || has_bold) && (!needs_italic || has_italic) {
+                bound.push(role);
+            }
+        }
     }
     // Interface text (formula bar, name box, dialogs) falls back to the cell font before the
     // script faces: whatever a cell can draw, the formula bar can draw too, even where no script

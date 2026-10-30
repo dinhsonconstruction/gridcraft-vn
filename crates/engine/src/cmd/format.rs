@@ -702,7 +702,7 @@ pub fn format_code_for(name: &str) -> &str {
         "Number" => "0.00",
         "Currency" => "\"$\"#,##0.00",
         "Accounting" => ACCOUNTING,
-        "Short Date" => "m/d/yyyy",
+        "Short Date" => "dd/mm/yyyy",
         "Long Date" => "[$-F800]dddd, mmmm dd, yyyy",
         "Time" => "[$-F400]h:mm:ss AM/PM",
         "Percentage" => "0.00%",

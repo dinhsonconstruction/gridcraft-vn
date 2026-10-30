@@ -11,7 +11,26 @@
   <img src="assets/app-icon/hicolor/256x256/apps/ai.storyteller.gridcraft.png" width="128" height="128" alt="GridCraft icon: a spreadsheet page on a green tile">
 </p>
 
-<h1 align="center">GridCraft</h1>
+<h1 align="center">GridCraft VN (Vietnamese Edition)</h1>
+
+<p align="center">
+  <b>Phiên bản GridCraft tối ưu hóa cho người dùng văn phòng, kế toán và xây dựng Việt Nam — phát triển trên nền tảng mã nguồn mở Rust của <a href="https://github.com/storytold/gridcraft">storytold/gridcraft</a>.</b>
+</p>
+
+## Điểm nổi bật của bản GridCraft VN (`dinhsonconstruction/gridcraft-vn`)
+
+- **Chuẩn soạn thảo văn bản & bảng tính Việt Nam mặc định (Nghị định 30/2020/NĐ-CP):**
+  - Font mặc định: **`Times New Roman`**, cỡ chữ **`13pt`**, chiều cao dòng chuẩn **`22pt`**, khổ giấy mặc định **`A4`**.
+  - Định dạng số Việt Nam: dấu chấm (`.`) phân cách hàng nghìn, dấu phẩy (`,`) thập phân (ví dụ: `1.234.567,89`).
+  - Định dạng ngày tháng mặc định: **`dd/mm/yyyy`** (hỗ trợ nhập trực tiếp ngày/tháng/năm).
+- **Hỗ trợ đầy đủ định dạng file dự toán / kế toán `.xls` (Excel 97–2003 BIFF8):**
+  - Đọc trọn vẹn `FONT`, bảng màu `PALETTE`, `XF` (kiểu chữ đậm/nghiêng/gạch chân, căn lề, trộn ô, kẻ khung `Borders`, màu nền), độ rộng cột/chiều cao dòng và thiết lập trang in (`SETUP`, `WSBOOL` Fit-to-Page, `MARGIN`, `HCENTER`/`VCENTER`, `Print_Area`, `Print_Titles`) từ các phần mềm dự toán G8, Eta, F1, HTKK...
+- **In ấn & Xuất PDF Tiếng Việt sắc nét (TrueType Unicode `Identity-H`):**
+  - Nhúng trực tiếp font TrueType Unicode (`Times New Roman` Regular / Bold / Italic / Bold Italic) vào PDF và đo độ rộng ký tự thực tế từng glyph tiếng Việt có dấu, khắc phục hoàn toàn lỗi mất dấu hoặc tràn trang khi in.
+
+---
+
+<h2 align="center">GridCraft (Upstream Overview)</h2>
 
 <p align="center">
   <b>Spreadsheets and data; an open-source, high-performance modern spreadsheet application, built in pure Rust.</b>

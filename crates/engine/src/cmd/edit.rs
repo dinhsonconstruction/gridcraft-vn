@@ -151,9 +151,9 @@ pub(crate) fn input_to_cell(input: &str, sheet: usize, at: CellRef, wb: &mut gri
                 || f.starts_with("EOMONTH(")
                 || f.starts_with("WORKDAY(")
             {
-                Some("m/d/yyyy")
+                Some("dd/mm/yyyy")
             } else if f.starts_with("NOW(") {
-                Some("m/d/yyyy h:mm")
+                Some("dd/mm/yyyy h:mm")
             } else if f.starts_with("TIME(") {
                 Some("h:mm AM/PM")
             } else {

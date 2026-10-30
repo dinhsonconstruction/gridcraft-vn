@@ -257,7 +257,7 @@ fn orientation(s: &mut Session, p: &Json) -> Result<Json> {
 }
 
 fn paper(s: &mut Session, p: &Json) -> Result<Json> {
-    let paper = str_param(p, "paper").unwrap_or("Letter").to_string();
+    let paper = str_param(p, "paper").unwrap_or("A4").to_string();
     edit(s, |cx| {
         let si = cx.sheet_index();
         cx.sheet_mut(si)?.print.paper = paper.clone();

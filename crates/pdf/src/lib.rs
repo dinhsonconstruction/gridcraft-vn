@@ -14,7 +14,9 @@
 #![forbid(unsafe_code)]
 
 mod metrics;
+mod ttf;
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 /// RGB colour, 0–255 per channel.
@@ -118,6 +120,15 @@ impl Font {
         }
     }
 
+    fn ttf_style(self) -> usize {
+        match self {
+            Font::HelveticaBold | Font::TimesBold | Font::CourierBold => 1,
+            Font::HelveticaOblique | Font::TimesItalic | Font::CourierOblique => 2,
+            Font::HelveticaBoldOblique | Font::TimesBoldItalic | Font::CourierBoldOblique => 3,
+            _ => 0,
+        }
+    }
+
     /// Advance width of a character in 1/1000 em.
     pub fn char_width(self, c: char) -> u16 {
         let table: Option<&[u16; 95]> = match self {
@@ -127,7 +138,7 @@ impl Font {
             Font::TimesBold | Font::TimesBoldItalic => Some(&metrics::TIMES_BOLD),
             _ => None,
         };
-        if needs_cid(c) {
+        if needs_cid(c) && metrics::fold(c).is_none() {
             return CID_WIDTH;
         }
         let Some(table) = table else { return 600 };
@@ -196,8 +207,10 @@ pub fn win_ansi(c: char) -> u8 {
 
 /// Index of the CID font in a page's font flags (after the [`Font::ALL`] faces).
 const CID_FONT: usize = Font::ALL.len();
+/// First slot for the 4 embedded TrueType Unicode font faces (Regular, Bold, Italic, BoldItalic).
+const TTF_FONT_BASE: usize = CID_FONT + 1;
 /// Number of font resources a page can use.
-const FONT_SLOTS: usize = CID_FONT + 1;
+const FONT_SLOTS: usize = TTF_FONT_BASE + 4;
 /// Base font of the CID font used for characters WinAnsiEncoding lacks.
 const CID_BASE_FONT: &str = "STSong-Light";
 /// Default glyph width of the CID font (full-width), in 1/1000 em.
@@ -320,6 +333,7 @@ pub struct Page {
     height: f32,
     content: String,
     fonts: [bool; FONT_SLOTS],
+    ttf_chars: [BTreeMap<u16, char>; 4],
     images: Vec<ImageData>,
     links: Vec<LinkAnnotation>,
     depth: u32,
@@ -553,18 +567,45 @@ impl Page {
             return;
         }
         let fi = font.index();
+        let ttf_style = font.ttf_style();
         let size = n(size.min(10_000.0));
         let (sn, cs) = if angle.is_finite() { angle.sin_cos() } else { (0.0, 1.0) };
         // Clockwise in y-down = counter-clockwise negated in PDF's y-up space.
         let mut s = format!("BT\n{}\n{} {} {} {} {} {} Tm\n", rgb_op(color, false), n(cs), n(-sn), n(sn), n(cs), n(x), n(self.y(y)));
-        // Runs of WinAnsi text use `font`; runs it cannot encode use the CID font. Each `Tj`
-        // advances the text position, so the runs follow each other on the baseline.
+        if text.chars().any(needs_cid)
+            && let Some(ttf) = ttf::get(ttf_style)
+            && ttf.can_encode(text)
+            && let Some(used_map) = self.ttf_chars.get_mut(ttf_style)
+        {
+            let slot = TTF_FONT_BASE + ttf_style;
+            if let Some(f) = self.fonts.get_mut(slot) {
+                *f = true;
+            }
+            let hex = ttf.encode_hex(text, used_map);
+            let _ = writeln!(s, "/F{} {} Tf\n{} Tj", slot + 1, size, hex);
+            s.push_str("ET");
+            self.op(&s);
+            return;
+        }
+        // Runs of WinAnsi text use `font`; runs it cannot encode use the TrueType font when
+        // covered, or the fallback CID font. Each `Tj` advances the text position.
         let mut rest = text;
         while let Some(first) = rest.chars().next() {
             let cid = needs_cid(first);
             let end = rest.char_indices().find(|(_, c)| needs_cid(*c) != cid).map_or(rest.len(), |(i, _)| i);
             let (run, tail) = rest.split_at(end);
-            let (slot, string) = if cid { (CID_FONT, pdf_utf16_string(run)) } else { (fi, pdf_string(run)) };
+            let (slot, string) = if cid {
+                if let Some(ttf) = ttf::get(ttf_style)
+                    && ttf.can_encode(run)
+                    && let Some(used_map) = self.ttf_chars.get_mut(ttf_style)
+                {
+                    (TTF_FONT_BASE + ttf_style, ttf.encode_hex(run, used_map))
+                } else {
+                    (CID_FONT, pdf_utf16_string(run))
+                }
+            } else {
+                (fi, pdf_string(run))
+            };
             if let Some(f) = self.fonts.get_mut(slot) {
                 *f = true;
             }
@@ -677,7 +718,16 @@ impl PdfDoc {
     pub fn add_page(&mut self, width_pt: f32, height_pt: f32) -> &mut Page {
         let width = if width_pt.is_finite() { width_pt.clamp(3.0, 14_400.0) } else { 612.0 };
         let height = if height_pt.is_finite() { height_pt.clamp(3.0, 14_400.0) } else { 792.0 };
-        self.pages.push(Page { width, height, content: String::new(), fonts: [false; FONT_SLOTS], images: Vec::new(), links: Vec::new(), depth: 0 });
+        self.pages.push(Page {
+            width,
+            height,
+            content: String::new(),
+            fonts: [false; FONT_SLOTS],
+            ttf_chars: Default::default(),
+            images: Vec::new(),
+            links: Vec::new(),
+            depth: 0,
+        });
         let i = self.pages.len() - 1;
         &mut self.pages[i]
     }
@@ -698,9 +748,15 @@ impl PdfDoc {
         }
         // Object numbering: 1 catalog, 2 page tree, 3 info, then fonts, then per page.
         let mut used = [false; FONT_SLOTS];
+        let mut doc_ttf_chars: [BTreeMap<u16, char>; 4] = Default::default();
         for p in &self.pages {
             for (u, f) in used.iter_mut().zip(p.fonts.iter()) {
                 *u |= *f;
+            }
+            for (dst, src) in doc_ttf_chars.iter_mut().zip(p.ttf_chars.iter()) {
+                for (&g, &c) in src {
+                    dst.entry(g).or_insert(c);
+                }
             }
         }
         let mut next = 4u32;
@@ -708,8 +764,13 @@ impl PdfDoc {
         for (i, u) in used.iter().enumerate() {
             if *u {
                 font_ids[i] = next;
-                // The CID font also needs its descendant font and font descriptor.
-                next += if i == CID_FONT { 3 } else { 1 };
+                next += if i == CID_FONT {
+                    3
+                } else if i >= TTF_FONT_BASE {
+                    5
+                } else {
+                    1
+                };
             }
         }
         let mut objects: Vec<(u32, Vec<u8>)> = Vec::new();
@@ -743,6 +804,15 @@ impl PdfDoc {
                         )
                         .into_bytes(),
                     ));
+                    continue;
+                }
+                if i >= TTF_FONT_BASE {
+                    let style = i - TTF_FONT_BASE;
+                    if let Some(ttf) = ttf::get(style)
+                        && let Some(chars) = doc_ttf_chars.get(style)
+                    {
+                        objects.extend(ttf.build_pdf_objects(style, *id, chars));
+                    }
                     continue;
                 }
                 let name = Font::ALL.get(i).copied().unwrap_or_default().base_name();

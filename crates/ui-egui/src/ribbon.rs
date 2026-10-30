@@ -465,6 +465,10 @@ fn theme_colors(app: &SheetApp) -> [u32; 12] {
 
 /// Runs a command from a ribbon click (menu-style: no params may open a dialog).
 fn act(app: &mut SheetApp, id: &str, params: serde_json::Value) {
+    if let Some(ed) = app.editor.as_mut() {
+        ed.request_focus = true;
+        ed.keep_selection = true;
+    }
     app.run_or_alert(id, params);
 }
 
@@ -2845,7 +2849,7 @@ pub fn shortcut(app: &mut SheetApp, key: Key, m: Modifiers) {
                 .active()
                 .map(|d| {
                     let today = gridcraft_engine::core::date::serial_in_system(d.wb.date_system, gridcraft_engine::calc::now_serial()).floor();
-                    gridcraft_engine::display::format(&gridcraft_engine::core::Value::Number(today), "m/d/yyyy", &d.wb).text
+                    gridcraft_engine::display::format(&gridcraft_engine::core::Value::Number(today), "dd/mm/yyyy", &d.wb).text
                 })
                 .unwrap_or_default();
             app.begin_edit(Some(text), false);

@@ -68,7 +68,7 @@ const DENSE_BLOCK: u64 = 60_000;
 
 /// Paper size in points (portrait) for a paper name; unknown names fall back to Letter.
 pub fn paper_size(name: &str) -> (f32, f32) {
-    known_paper(name).unwrap_or((612.0, 792.0))
+    known_paper(name).unwrap_or((595.28, 841.89))
 }
 
 /// Paper sizes in points, portrait. `B4`/`B5`/`B6` are the **JIS** sizes Japanese Excel and its
@@ -210,13 +210,20 @@ pub fn print_range(sh: &Sheet) -> Option<RangeRef> {
     r
 }
 
-/// Whole rows/columns are trimmed to the used range.
+/// Whole rows/columns (including Excel 97-2003 BIFF8 256-col / 65,536-row spans) are trimmed to
+/// the used range.
 fn trim_full(sh: &Sheet, r: RangeRef) -> RangeRef {
-    if !(r.is_full_cols() || r.is_full_rows()) {
+    let full_cols = r.is_full_cols() || (r.start.row == 0 && r.end.row >= 65_534);
+    let full_rows = r.is_full_rows() || (r.start.col == 0 && r.end.col >= 254);
+    if !(full_cols || full_rows) {
         return r;
     }
     match sh.used_range() {
-        Some(u) => r.intersection(&RangeRef::new(CellRef::new(0, 0), u.end)).unwrap_or(RangeRef::cell(r.start)),
+        Some(u) => {
+            let end_row = if full_cols { r.end.row.min(u.end.row) } else { r.end.row };
+            let end_col = if full_rows { r.end.col.min(u.end.col) } else { r.end.col };
+            RangeRef::new(r.start, CellRef::new(end_row.max(r.start.row), end_col.max(r.start.col)))
+        }
         None => RangeRef::cell(r.start),
     }
 }
@@ -427,7 +434,7 @@ pub struct HfContext {
 /// Today's date and the current time as headers and footers show them (`&D`, `&T`).
 pub fn hf_date_time(wb: &Workbook) -> (String, String) {
     let now = gridcraft_core::date::serial_in_system(wb.date_system, gridcraft_calc::now_serial());
-    let date = crate::display::format(&Value::Number(now.floor()), "m/d/yyyy", wb).text;
+    let date = crate::display::format(&Value::Number(now.floor()), "dd/mm/yyyy", wb).text;
     let time = crate::display::format(&Value::Number(now), "h:mm AM/PM", wb).text;
     (date, time)
 }

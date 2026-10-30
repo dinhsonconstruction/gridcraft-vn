@@ -156,7 +156,7 @@ fn fill_int(toks: &[Tok], idxs: &[usize], digits: &str, thousands: bool, force_z
         let mut rev = String::new();
         let push_digit = |c: char, rev: &mut String, pos: &mut usize| {
             if thousands && *pos > 0 && pos.is_multiple_of(3) {
-                rev.push(',');
+                rev.push('.');
             }
             rev.push(c);
             *pos += 1;
@@ -195,7 +195,7 @@ fn with_commas(digits: &str, thousands: bool) -> String {
     let mut s = String::with_capacity(n + n / 3);
     for (i, c) in digits.chars().enumerate() {
         if i > 0 && (n - i).is_multiple_of(3) {
-            s.push(',');
+            s.push('.');
         }
         s.push(c);
     }
@@ -334,7 +334,7 @@ pub(crate) fn render_number(sec: &Section, v: f64) -> Out {
         if let Some(p) = point
             && let Some(s) = pieces.get_mut(p)
         {
-            *s = ".".into();
+            *s = ",".into();
         }
     }
     let mut out = Out::default();

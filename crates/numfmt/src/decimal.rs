@@ -158,7 +158,7 @@ pub fn format_general_fit(n: f64, max_chars: usize) -> Option<String> {
             let mut s = String::from(sign);
             s.push_str(if i.is_empty() { "0" } else { &i });
             if !f.is_empty() {
-                s.push('.');
+                s.push(',');
                 s.push_str(f);
             }
             if s.chars().count() <= max_chars {
@@ -181,7 +181,7 @@ pub fn format_general_fit(n: f64, max_chars: usize) -> Option<String> {
         let mut s = String::from(sign);
         s.push_str(if mi.is_empty() { "0" } else { &mi });
         if !mf.is_empty() {
-            s.push('.');
+            s.push(',');
             s.push_str(mf);
         }
         s.push_str(&format!("E{}{:02}", if e < 0 { '-' } else { '+' }, e.unsigned_abs()));

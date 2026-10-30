@@ -130,7 +130,7 @@ fn yes() -> bool {
 
 /// Default width of a column and height of a row (pixels at 96 dpi) for the default font.
 pub const DEFAULT_COL_WIDTH: f32 = 64.0;
-pub const DEFAULT_ROW_HEIGHT: f32 = 20.0;
+pub const DEFAULT_ROW_HEIGHT: f32 = 22.0;
 
 /// Column width (points) → characters of the default font's digit width (7 px), without the
 /// cell padding: the value the Column Width dialog shows.

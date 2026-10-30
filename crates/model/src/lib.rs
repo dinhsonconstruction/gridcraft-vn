@@ -29,5 +29,5 @@ pub use workbook::{CalcMode, CalcSettings, DefinedName, DocProps, PhoneticProps,
 
 /// Font used for new workbooks. Only a name: renderers substitute an available open font
 /// (e.g. the metric-compatible Carlito) when it isn't installed.
-pub const DEFAULT_FONT: &str = "Calibri";
-pub const DEFAULT_FONT_SIZE: f32 = 11.0;
+pub const DEFAULT_FONT: &str = "Times New Roman";
+pub const DEFAULT_FONT_SIZE: f32 = 13.0;

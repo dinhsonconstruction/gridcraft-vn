@@ -18,7 +18,7 @@ const BUILTIN_FORMATS: [(u32, &str); 36] = [
     (11, "0.00E+00"),
     (12, "# ?/?"),
     (13, "# ??/??"),
-    (14, "m/d/yyyy"),
+    (14, "dd/mm/yyyy"),
     (15, "d-mmm-yy"),
     (16, "d-mmm"),
     (17, "mmm-yy"),
@@ -26,7 +26,7 @@ const BUILTIN_FORMATS: [(u32, &str); 36] = [
     (19, "h:mm:ss AM/PM"),
     (20, "h:mm"),
     (21, "h:mm:ss"),
-    (22, "m/d/yyyy h:mm"),
+    (22, "dd/mm/yyyy h:mm"),
     (37, "#,##0 ;(#,##0)"),
     (38, "#,##0 ;[Red](#,##0)"),
     (39, "#,##0.00;(#,##0.00)"),
@@ -353,7 +353,7 @@ mod tests {
         assert_eq!(file_function_name("PERCENTOF").as_deref(), Some("_xlfn.PERCENTOF"));
         assert_eq!(file_function_name("TRIMRANGE").as_deref(), Some("_xlfn.TRIMRANGE"));
         assert_eq!(file_function_name("SUM"), None);
-        assert_eq!(builtin_format(14), Some("m/d/yyyy"));
+        assert_eq!(builtin_format(14), Some("dd/mm/yyyy"));
         assert_eq!(builtin_id("0.00%"), Some(10));
         assert_eq!(builtin_id(builtin_format(5).unwrap()), None);
         assert_eq!(paper_name(9), Some("A4"));

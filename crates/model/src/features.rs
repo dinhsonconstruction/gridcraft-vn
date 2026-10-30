@@ -838,7 +838,7 @@ impl Default for PrintSettings {
     fn default() -> Self {
         PrintSettings {
             orientation: Orientation::Portrait,
-            paper: "Letter".into(),
+            paper: "A4".into(),
             margins: [0.7, 0.7, 0.75, 0.75, 0.3, 0.3],
             print_area: None,
             title_rows: None,

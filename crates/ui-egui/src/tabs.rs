@@ -430,7 +430,7 @@ pub(crate) fn selection_statistics(app: &SheetApp) -> Vec<String> {
     let fmt = |v: f64| {
         let code = d.wb.styles.get(sh.style_id(d.selection.active)).num_fmt.as_str().to_string();
         let code = if code == "General" { "#,##0.##########".to_string() } else { code };
-        gridcraft_engine::display::format(&gridcraft_engine::core::Value::Number(v), &code, &d.wb).text.trim_end_matches('.').to_string()
+        gridcraft_engine::display::format(&gridcraft_engine::core::Value::Number(v), &code, &d.wb).text.trim_end_matches(['.', ',']).to_string()
     };
     let mut parts = Vec::new();
     if on.average

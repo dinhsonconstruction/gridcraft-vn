@@ -792,9 +792,12 @@ fn print(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcome)
 const PREVIEW_ROWS: u32 = 200;
 const PREVIEW_COLS: u32 = 60;
 
-/// Draws one printed page in miniature: the cells' displayed text at the page's print scale,
-/// inside the sheet's margins. `paper_w` is the page width in points.
+/// Draws one printed page in miniature: the cells' displayed text, fills, borders and merges at
+/// the page's print scale, inside the sheet's margins. `paper_w` is the page width in points.
 fn paint_page(p: &egui::Painter, rect: Rect, paper_w: f32, page: &Json, wb: &gridcraft_engine::model::Workbook, t: &Tokens) {
+    use gridcraft_engine::core::CellRef;
+    use gridcraft_engine::model::{HAlign, PatternType, VAlign};
+
     let Some(range) = page.get("range").and_then(Json::as_str).and_then(gridcraft_engine::core::RangeRef::parse) else { return };
     let Some(sh) = page.get("sheet").and_then(Json::as_str).and_then(|n| wb.sheet_index(n)).and_then(|i| wb.sheets.get(i)) else { return };
     // Preview pixels per point, and per sheet pixel (sheet geometry is 96 dpi: 0.75 pt per pixel).
@@ -811,48 +814,178 @@ fn paint_page(p: &egui::Painter, rect: Rect, paper_w: f32, page: &Json, wb: &gri
     if !body.is_positive() {
         return;
     }
-    let font = theme::ui_font((11.0 * per_pt * print_scale).clamp(3.0, 14.0));
     let last_row = range.end.row.min(range.start.row.saturating_add(PREVIEW_ROWS));
     let last_col = range.end.col.min(range.start.col.saturating_add(PREVIEW_COLS));
-    let mut y = body.top();
+
+    let mut col_x = Vec::with_capacity((last_col - range.start.col + 2) as usize);
+    let mut cx = 0.0f32;
+    for col in range.start.col..=last_col {
+        col_x.push(cx);
+        cx += sh.col_width(col) * per_px;
+    }
+    col_x.push(cx);
+
+    let mut row_y = Vec::with_capacity((last_row - range.start.row + 2) as usize);
+    let mut ry = 0.0f32;
     for row in range.start.row..=last_row {
-        let h = sh.row_height(row) * per_px;
+        row_y.push(ry);
+        ry += sh.row_height(row) * per_px;
+    }
+    row_y.push(ry);
+
+    let ox = if sh.print.center_h && cx < body.width() { body.left() + (body.width() - cx) * 0.5 } else { body.left() };
+    let oy = if sh.print.center_v && ry < body.height() { body.top() + (body.height() - ry) * 0.5 } else { body.top() };
+    let cp = p.with_clip_rect(body);
+
+    let cell_rect = |r0: u32, c0: u32, r1: u32, c1: u32| -> Rect {
+        let ri0 = r0.saturating_sub(range.start.row) as usize;
+        let ri1 = (r1.min(last_row) - range.start.row + 1) as usize;
+        let ci0 = c0.saturating_sub(range.start.col) as usize;
+        let ci1 = (c1.min(last_col) - range.start.col + 1) as usize;
+        let x0 = ox + col_x.get(ci0).copied().unwrap_or(0.0);
+        let x1 = ox + col_x.get(ci1).copied().unwrap_or(cx);
+        let y0 = oy + row_y.get(ri0).copied().unwrap_or(0.0);
+        let y1 = oy + row_y.get(ri1).copied().unwrap_or(ry);
+        Rect::from_min_max(pos2(x0, y0), pos2(x1, y1))
+    };
+
+    if sh.print.gridlines {
+        let gstroke = Stroke::new(0.5, t.gridline);
+        let gx1 = (ox + cx).min(body.right());
+        let gy1 = (oy + ry).min(body.bottom());
+        for &y in &row_y {
+            let py = oy + y;
+            if py <= body.bottom() {
+                cp.line_segment([pos2(ox, py), pos2(gx1, py)], gstroke);
+            }
+        }
+        for &x in &col_x {
+            let px = ox + x;
+            if px <= body.right() {
+                cp.line_segment([pos2(px, oy), pos2(px, gy1)], gstroke);
+            }
+        }
+    }
+
+    for row in range.start.row..=last_row {
+        let ri = (row - range.start.row) as usize;
+        let y0 = oy + row_y[ri];
+        let h = row_y[ri + 1] - row_y[ri];
         if h <= 0.0 {
             continue;
         }
-        if y >= body.bottom() {
+        if y0 >= body.bottom() {
             break;
         }
-        let mut x = body.left();
         for col in range.start.col..=last_col {
-            let w = sh.col_width(col) * per_px;
+            let ci = (col - range.start.col) as usize;
+            let x0 = ox + col_x[ci];
+            let w = col_x[ci + 1] - col_x[ci];
             if w <= 0.0 {
                 continue;
             }
-            if x >= body.right() {
+            if x0 >= body.right() {
                 break;
             }
-            let cell = gridcraft_engine::core::CellRef::new(row, col);
-            let text = gridcraft_engine::display::cell_text(wb, sh, cell);
-            if !text.is_empty() {
-                let numeric = sh.value(cell).as_f64().is_some();
-                // Text runs on over empty neighbours, as on the sheet; numbers stay in their cell.
-                let mut span = w;
-                if !numeric {
-                    let mut next = col.saturating_add(1);
-                    while next <= last_col && x + span < body.right() && sh.value(gridcraft_engine::core::CellRef::new(row, next)).is_empty() {
-                        span += sh.col_width(next) * per_px;
-                        next = next.saturating_add(1);
+            let pos = CellRef::new(row, col);
+            let merge = sh.merge_at(pos);
+            let is_merge_lead = merge.is_none_or(|m| {
+                row == m.start.row.max(range.start.row) && col == m.start.col.max(range.start.col)
+            });
+
+            if is_merge_lead {
+                let (src_pos, draw_rect) = if let Some(m) = merge {
+                    (m.start, cell_rect(m.start.row.max(range.start.row), m.start.col.max(range.start.col), m.end.row, m.end.col))
+                } else {
+                    (pos, Rect::from_min_size(pos2(x0, y0), vec2(w, h)))
+                };
+                let style = wb.styles.get(sh.style_id(src_pos));
+                if style.fill.pattern == PatternType::Solid
+                    && let Some(rgb) = style.fill.fg.resolve(&wb.theme)
+                {
+                    cp.rect_filled(draw_rect, 0.0, theme::color32(rgb));
+                }
+                let text = gridcraft_engine::display::cell_text(wb, sh, src_pos);
+                if !text.is_empty() {
+                    let val = sh.value(src_pos);
+                    let numeric = val.as_f64().is_some();
+                    let halign = match style.align.h {
+                        HAlign::General => {
+                            if numeric {
+                                HAlign::Right
+                            } else if matches!(val, gridcraft_engine::core::Value::Bool(_) | gridcraft_engine::core::Value::Error(_)) {
+                                HAlign::Center
+                            } else {
+                                HAlign::Left
+                            }
+                        }
+                        other => other,
+                    };
+                    let mut text_rect = draw_rect;
+                    if merge.is_none() && !numeric && !style.align.wrap && matches!(halign, HAlign::Left) {
+                        let mut next = col.saturating_add(1);
+                        while next <= last_col
+                            && text_rect.right() < body.right()
+                            && sh.value(CellRef::new(row, next)).is_empty()
+                            && sh.merge_at(CellRef::new(row, next)).is_none()
+                        {
+                            text_rect.max.x += sh.col_width(next) * per_px;
+                            next = next.saturating_add(1);
+                        }
+                    }
+                    let fsize = (style.font.size * per_pt * print_scale).clamp(2.5, 16.0);
+                    let font_id = egui::FontId::new(fsize, theme::cell_family(&style.font.name, style.font.bold, style.font.italic));
+                    let fg = style.font.color.resolve(&wb.theme).map_or(t.cell_text, theme::color32);
+                    let clip = text_rect.intersect(body);
+                    if clip.is_positive() {
+                        if style.align.wrap && text_rect.width() > 2.0 {
+                            let galley = cp.layout(text, font_id, fg, (text_rect.width() - 2.0).max(1.0));
+                            let gx = match halign {
+                                HAlign::Center | HAlign::CenterAcross => text_rect.center().x - galley.size().x * 0.5,
+                                HAlign::Right => text_rect.right() - 1.0 - galley.size().x,
+                                _ => text_rect.left() + 1.0,
+                            };
+                            let gy = match style.align.v {
+                                VAlign::Top => text_rect.top() + 0.5,
+                                VAlign::Center => text_rect.center().y - galley.size().y * 0.5,
+                                _ => (text_rect.bottom() - 0.5 - galley.size().y).max(text_rect.top()),
+                            };
+                            cp.with_clip_rect(clip).galley(pos2(gx, gy), galley, fg);
+                        } else {
+                            let (anchor, at) = match halign {
+                                HAlign::Center | HAlign::CenterAcross => (Align2::CENTER_CENTER, text_rect.center()),
+                                HAlign::Right => (Align2::RIGHT_CENTER, pos2(text_rect.right() - 1.0, text_rect.center().y)),
+                                _ => (Align2::LEFT_CENTER, pos2(text_rect.left() + 1.0, text_rect.center().y)),
+                            };
+                            cp.with_clip_rect(clip).text(at, anchor, text, font_id, fg);
+                        }
                     }
                 }
-                let clip = Rect::from_min_size(pos2(x, y), vec2(span, h)).intersect(body);
-                let (anchor, at) =
-                    if numeric { (Align2::RIGHT_CENTER, pos2(x + w - 1.0, y + h / 2.0)) } else { (Align2::LEFT_CENTER, pos2(x + 1.0, y + h / 2.0)) };
-                p.with_clip_rect(clip).text(at, anchor, text, font.clone(), t.cell_text);
             }
-            x += w;
+
+            let b = &wb.styles.get(sh.style_id(pos)).borders;
+            let bstroke = |bl: &gridcraft_engine::model::BorderLine| -> Option<Stroke> {
+                if bl.is_none() {
+                    return None;
+                }
+                let c = bl.color.resolve(&wb.theme).map_or(egui::Color32::BLACK, theme::color32);
+                Some(Stroke::new((bl.style.width() * per_pt * print_scale * 0.6).clamp(0.5, 2.0), c))
+            };
+            let x1 = x0 + w;
+            let y1 = y0 + h;
+            if let Some(s) = bstroke(&b.top) {
+                cp.line_segment([pos2(x0, y0), pos2(x1, y0)], s);
+            }
+            if let Some(s) = bstroke(&b.bottom) {
+                cp.line_segment([pos2(x0, y1), pos2(x1, y1)], s);
+            }
+            if let Some(s) = bstroke(&b.left) {
+                cp.line_segment([pos2(x0, y0), pos2(x0, y1)], s);
+            }
+            if let Some(s) = bstroke(&b.right) {
+                cp.line_segment([pos2(x1, y0), pos2(x1, y1)], s);
+            }
         }
-        y += h;
     }
 }
 
