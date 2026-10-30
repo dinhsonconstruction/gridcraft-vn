@@ -135,7 +135,16 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("home.accounting", "Accounting Number Format", ["Home", "Number"], None, "{range?, symbol?: \"$\"}", has_doc, accounting),
         cmd!("home.percent", "Percent Style", ["Home", "Number"], Some("Ctrl+Shift+%"), "{range?}", has_doc, |s, p| set_fmt(s, p, "0%")),
-        cmd!("home.comma", "Comma Style", ["Home", "Number"], None, "{range?}", has_doc, |s, p| set_fmt(s, p, COMMA)),
+        cmd!("home.comma", "Comma Style", ["Home", "Number"], None, "{range?, decimals?: 0|2}", has_doc, comma_style),
+        cmd!(
+            "home.convertVietnamese",
+            "Convert Vietnamese Encoding",
+            ["Home", "Editing"],
+            None,
+            "{sheet?: bool, range?, source?: \"auto\"|\"tcvn3\"|\"vni\"}",
+            has_doc,
+            convert_vietnamese
+        ),
         cmd!("home.increaseDecimal", "Increase Decimal", ["Home", "Number"], None, "{range?}", has_doc, |s, p| decimals(s, p, 1)),
         cmd!("home.decreaseDecimal", "Decrease Decimal", ["Home", "Number"], None, "{range?}", has_doc, |s, p| decimals(s, p, -1)),
         // Styles
@@ -205,6 +214,12 @@ pub fn specs() -> Vec<CommandSpec> {
 
 const ACCOUNTING: &str = "_(\"$\"* #,##0.00_);_(\"$\"* \\(#,##0.00\\);_(\"$\"* \"-\"??_);_(@_)";
 const COMMA: &str = "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)";
+const COMMA_INT: &str = "_(* #,##0_);_(* \\(#,##0\\);_(* \"-\"_);_(@_)";
+
+fn comma_style(s: &mut Session, p: &Json) -> Result<Json> {
+    let code = if u32_param(p, "decimals") == Some(0) { COMMA_INT } else { COMMA };
+    set_fmt(s, p, code)
+}
 
 /// Accounting Number Format with the currency symbol to use (Excel's own button takes the system
 /// currency; `symbol` is how the control channel picks another one, e.g. `"L"` for lempiras).
@@ -219,8 +234,96 @@ fn accounting(s: &mut Session, p: &Json) -> Result<Json> {
 }
 
 fn accounting_format(symbol: &str) -> String {
-    let symbol = format!("\"{symbol}\"");
-    format!("_({symbol}* #,##0.00_);_({symbol}* \\(#,##0.00\\);_({symbol}* \"-\"??_);_(@_)")
+    let quoted = format!("\"{symbol}\"");
+    if matches!(symbol, "₫" | "VND" | "VNĐ") {
+        format!("_({quoted}* #,##0_);_({quoted}* \\(#,##0\\);_({quoted}* \"-\"_);_(@_)")
+    } else {
+        format!("_({quoted}* #,##0.00_);_({quoted}* \\(#,##0.00\\);_({quoted}* \"-\"??_);_(@_)")
+    }
+}
+
+fn convert_vietnamese(s: &mut Session, p: &Json) -> Result<Json> {
+    let sheet = target_sheet(s, p)?;
+    let source = str_param(p, "source").unwrap_or("auto").to_string();
+    let force_sheet = bool_param(p, "sheet").unwrap_or(false);
+    let explicit_range = p.get("range").is_some();
+    let sel_ranges = target_ranges(s, p)?;
+    if s.doc()?.wb.sheet(sheet).is_some_and(|sh| sh.protection.is_some()) {
+        return Err(EngineError::Other("The cell or chart you're trying to change is on a protected sheet.".into()));
+    }
+    edit(s, |cx| {
+        let whole_sheet = if force_sheet {
+            true
+        } else if !explicit_range && sel_ranges.len() == 1 && sel_ranges[0].is_single() {
+            let c = sel_ranges[0].start;
+            let single_needs_conv = cx.wb.sheet(sheet).is_some_and(|sh| {
+                let st = cx.wb.styles.get(sh.style_id(c));
+                let legacy_font = gridcraft_functions::vn::is_legacy_vn_font(&st.font.name).is_some();
+                let legacy_text = sh.cell(c).is_some_and(|cell| {
+                    cell.formula.is_none()
+                        && matches!(&cell.value, gridcraft_core::Value::Text(t) if gridcraft_functions::vn::convert_vietnamese_text(t, &source, &st.font.name) != t.as_ref())
+                });
+                legacy_font || legacy_text
+            });
+            !single_needs_conv
+        } else {
+            false
+        };
+
+        let target_areas: Vec<RangeRef> = if whole_sheet {
+            cx.wb.sheet(sheet).and_then(|sh| sh.used_range()).into_iter().collect()
+        } else {
+            sel_ranges
+        };
+
+        let mut converted_cells = 0usize;
+        let mut style_cache: std::collections::HashMap<StyleId, StyleId> = std::collections::HashMap::new();
+
+        for r in &target_areas {
+            let cells: Vec<(CellRef, Cell)> = cx
+                .wb
+                .sheet(sheet)
+                .map(|sh| sh.cells.iter_range(*r).map(|(c, cell)| (c, cell.clone())).collect())
+                .unwrap_or_default();
+
+            for (c, mut cell) in cells {
+                let st_id = cell.style;
+                let font_name = cx.wb.styles.get(st_id).font.name.clone();
+                let mut cell_changed = false;
+
+                if cell.formula.is_none()
+                    && let gridcraft_core::Value::Text(t) = &cell.value
+                {
+                    let new_text = gridcraft_functions::vn::convert_vietnamese_text(t, &source, &font_name);
+                    if new_text != t.as_ref() {
+                        cell.value = gridcraft_core::Value::text(new_text);
+                        cell_changed = true;
+                    }
+                }
+
+                if gridcraft_functions::vn::is_legacy_vn_font(&font_name).is_some() {
+                    let new_st = *style_cache.entry(st_id).or_insert_with(|| {
+                        cx.wb.styles.derive(st_id, |st| {
+                            st.font.name = "Times New Roman".to_string();
+                            st.font.charset = None;
+                        })
+                    });
+                    if new_st != cell.style {
+                        cell.style = new_st;
+                        cell_changed = true;
+                    }
+                }
+
+                if cell_changed {
+                    cx.sheet_mut(sheet)?.set_cell(c, cell);
+                    cx.changed.push((sheet, c));
+                    cx.fit_rows.push((sheet, c.row));
+                    converted_cells += 1;
+                }
+            }
+        }
+        Ok(json!({ "converted": converted_cells }))
+    })
 }
 
 fn with(p: &Json, key: &str, v: Json) -> Json {

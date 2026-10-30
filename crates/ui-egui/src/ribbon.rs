@@ -690,6 +690,8 @@ fn combo_popup(
 
 /// The Accounting Number Format dropdown: label and the code Excel applies for that symbol.
 const ACCOUNTING_SYMBOLS: &[(&str, &str)] = &[
+    ("₫ Tiếng Việt (Việt Nam)", "_-[$₫-42a]* #,##0_-;-[$₫-42a]* #,##0_-;_-[$₫-42a]* \"-\"_-;_-@_-"),
+    ("VNĐ Tiếng Việt", "_-[$VNĐ-42a]* #,##0_-;-[$VNĐ-42a]* #,##0_-;_-[$VNĐ-42a]* \"-\"_-;_-@_-"),
     ("$ English (United States)", "_(\"$\"* #,##0.00_);_(\"$\"* \\(#,##0.00\\);_(\"$\"* \"-\"??_);_(@_)"),
     ("£ English (United Kingdom)", "_-[$£-809]* #,##0.00_-;-[$£-809]* #,##0.00_-;_-[$£-809]* \"-\"??_-;_-@_-"),
     ("€ Euro", "_-[$€-x-euro2] * #,##0.00_-;-[$€-x-euro2] * #,##0.00_-;_-[$€-x-euro2] * \"-\"??_-;_-@_-"),
@@ -1022,7 +1024,11 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
             let (c, ca) = split_button(ui, Icon::Currency, None, "Accounting Number Format");
             control_keytip(app, ui, &ca, "home.accounting");
             if c {
-                act(app, "home.accounting", json!({}));
+                if app.ui.language == crate::i18n::Language::Vi {
+                    act(app, "home.accounting", json!({"symbol": "₫"}));
+                } else {
+                    act(app, "home.accounting", json!({}));
+                }
             }
             egui::Popup::menu(&ca).show(|ui| {
                 let mut items: Vec<_> = ACCOUNTING_SYMBOLS.iter().map(|(label, code)| (*label, "home.numberFormat", json!({"code": code}))).collect();
@@ -1038,7 +1044,11 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
             let __k = icon_button(ui, Icon::Comma, t.text, "Comma Style", vec2(24.0, 23.0));
             control_keytip(app, ui, &__k, "home.comma");
             if __k.clicked() {
-                act(app, "home.comma", json!({}));
+                if app.ui.language == crate::i18n::Language::Vi {
+                    act(app, "home.comma", json!({"decimals": 0}));
+                } else {
+                    act(app, "home.comma", json!({}));
+                }
             }
             let __k = icon_button(ui, Icon::DecInc, t.text, "Increase Decimal", vec2(26.0, 23.0));
             control_keytip(app, ui, &__k, "home.increaseDecimal");
@@ -1259,6 +1269,23 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
                 ("Conditional Formatting", "edit.goToSpecial", json!({"kind": "conditionalFormats"})),
                 ("Constants", "edit.goToSpecial", json!({"kind": "constants"})),
                 ("Data Validation", "edit.goToSpecial", json!({"kind": "dataValidation"})),
+            ],
+        );
+    });
+    let (vn_btn, vn_arrow) = big_split_button(ui, Icon::Symbol, "VN\nCode", "Convert Vietnamese Encoding (TCVN3/VNI to Unicode)");
+    if vn_btn.clicked() {
+        act(app, "home.convertVietnamese", json!({"source": "auto"}));
+    }
+    egui::Popup::menu(&vn_arrow).show(|ui| {
+        menu_items(
+            app,
+            ui,
+            &[
+                ("Auto-convert Selection (TCVN3/VNI → Unicode)", "home.convertVietnamese", json!({"source": "auto"})),
+                ("Convert Entire Sheet to Unicode", "home.convertVietnamese", json!({"source": "auto", "sheet": true})),
+                ("-", "", json!(null)),
+                ("TCVN3 (ABC .VnTime) → Unicode", "home.convertVietnamese", json!({"source": "tcvn3"})),
+                ("VNI-Windows (VNI-Times) → Unicode", "home.convertVietnamese", json!({"source": "vni"})),
             ],
         );
     });
@@ -1898,6 +1925,7 @@ fn page_layout(app: &mut SheetApp, ui: &mut Ui) {
             app,
             ui,
             &[
+                ("Decree 30/2020 (VN Standard)", "pageLayout.margins", json!({"preset": "nd30"})),
                 ("Normal", "pageLayout.margins", json!({"preset": "normal"})),
                 ("Wide", "pageLayout.margins", json!({"preset": "wide"})),
                 ("Narrow", "pageLayout.margins", json!({"preset": "narrow"})),

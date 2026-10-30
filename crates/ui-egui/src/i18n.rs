@@ -172,21 +172,27 @@ impl Language {
         }
     }
 
-    /// The system's preferred interface language, best effort; English when it is unknown or
-    /// unsupported. Used as the first-run default while nothing is saved.
+    /// The system's preferred interface language, best effort; defaults to Vietnamese in GridCraft VN.
     pub fn system() -> Self {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            sys_locale::get_locale().and_then(|tag| Self::from_tag(&tag)).unwrap_or(Self::En)
+            match sys_locale::get_locale().and_then(|tag| Self::from_tag(&tag)) {
+                Some(Self::En) | None => Self::Vi,
+                Some(lang) => lang,
+            }
         }
         #[cfg(target_arch = "wasm32")]
         {
-            web_sys::window().and_then(|window| window.navigator().language()).and_then(|tag| Self::from_tag(&tag)).unwrap_or(Self::En)
+            web_sys::window().and_then(|window| window.navigator().language()).and_then(|tag| Self::from_tag(&tag)).unwrap_or(Self::Vi)
         }
     }
 
     pub fn formula_locale(self) -> gridcraft_engine::formula::FormulaLocale {
-        if self == Self::Es { gridcraft_engine::formula::FormulaLocale::Es } else { gridcraft_engine::formula::FormulaLocale::En }
+        match self {
+            Self::Es => gridcraft_engine::formula::FormulaLocale::Es,
+            Self::Vi => gridcraft_engine::formula::FormulaLocale::Vi,
+            _ => gridcraft_engine::formula::FormulaLocale::En,
+        }
     }
 
     /// Translates an interface label; untranslated labels fall back to English.

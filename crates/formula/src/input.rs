@@ -9,6 +9,7 @@ pub enum FormulaLocale {
     #[default]
     En,
     Es,
+    Vi,
 }
 
 const SPANISH: &[(&str, &str)] = &[
@@ -92,7 +93,7 @@ pub fn print_input(expr: &Expr, locale: FormulaLocale, known_name: impl Fn(&str)
             _ => {}
         }
     }
-    if locale == FormulaLocale::En {
+    if matches!(locale, FormulaLocale::En | FormulaLocale::Vi) {
         return Ok(crate::print(expr));
     }
     let mut expr = expr.clone();

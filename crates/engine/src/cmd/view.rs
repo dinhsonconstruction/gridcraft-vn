@@ -69,7 +69,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Margins",
             ["Page Layout", "Page Setup"],
             None,
-            "{preset?: normal|wide|narrow, left?, right?, top?, bottom?, header?, footer? (inches)}",
+            "{preset?: normal|wide|narrow|nd30, left?, right?, top?, bottom?, header?, footer? (inches)}",
             has_doc,
             margins
         ),
@@ -270,6 +270,7 @@ fn margins(s: &mut Session, p: &Json) -> Result<Json> {
         Some("wide") => Some([1.0, 1.0, 1.0, 1.0, 0.5, 0.5]),
         Some("narrow") => Some([0.25, 0.25, 0.75, 0.75, 0.3, 0.3]),
         Some("normal") => Some([0.7, 0.7, 0.75, 0.75, 0.3, 0.3]),
+        Some("nd30" | "vn") => Some([1.18, 0.59, 0.79, 0.79, 0.3, 0.3]),
         _ => None,
     };
     edit(s, |cx| {

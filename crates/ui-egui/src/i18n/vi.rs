@@ -412,6 +412,11 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Workbook calculation" => "Tính toán sổ làm việc",
         "Enable iterative calculation" => "Bật tính toán lặp",
         "Calculation settings are saved with the workbook." => "Thiết lập tính toán được lưu cùng sổ làm việc.",
+        "VN\nCode" => "Chuyển\nmã VN",
+        "Convert Vietnamese Encoding (TCVN3/VNI to Unicode)" => "Chuyển mã tiếng Việt (TCVN3/VNI sang Unicode & Times New Roman)",
+        "Auto-convert Selection (TCVN3/VNI → Unicode)" => "Tự động chuyển mã vùng chọn (TCVN3/VNI → Unicode)",
+        "Convert Entire Sheet to Unicode" => "Chuyển mã toàn bộ Sheet sang Unicode",
+        "Decree 30/2020 (VN Standard)" => "Nghị định 30/2020 (Chuẩn VN: Trái 3cm, Phải 1,5cm)",
         _ => return None,
     })
 }

@@ -66,7 +66,13 @@ fn parse_top(src: &str, locale: crate::FormulaLocale, allow_union: bool) -> Resu
     }
     let toks = tokenize_locale(body, locale).map_err(|e| ParseError { msg: e.msg, pos: e.pos })?;
     let toks = significant_spaces(toks);
-    let mut p = Parser { toks, i: 0, depth: 0, input: locale == crate::FormulaLocale::Es };
+    let mut p = Parser {
+        toks,
+        i: 0,
+        depth: 0,
+        input: locale == crate::FormulaLocale::Es,
+        allow_semicolon_args: locale == crate::FormulaLocale::Vi,
+    };
     let e = p.expr(0, allow_union)?;
     match p.peek() {
         Tok::Eof => Ok(e),
@@ -107,6 +113,7 @@ struct Parser {
     i: usize,
     depth: usize,
     input: bool,
+    allow_semicolon_args: bool,
 }
 
 fn word_is_cols(w: &str) -> Option<(u32, bool)> {
@@ -262,11 +269,13 @@ impl Parser {
         loop {
             let a = match self.peek() {
                 Tok::Comma | Tok::RParen => Expr::Missing,
+                Tok::Semicolon if self.allow_semicolon_args => Expr::Missing,
                 _ => self.expr(0, false)?,
             };
             args.push(a);
             match self.next() {
                 Tok::Comma => continue,
+                Tok::Semicolon if self.allow_semicolon_args => continue,
                 Tok::RParen => break,
                 t => return Err(self.err(format!("expected `,` or `)`, found {}", describe(&t)))),
             }

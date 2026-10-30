@@ -943,6 +943,11 @@ pub(crate) fn specs() -> Vec<FnSpec> {
         f!("DOLLAR", 1, 2, Text, S, "DOLLAR(number, [decimals])", "Formats a number as currency text.", dollar),
         f!("USDOLLAR", 1, 2, Compatibility, S, "USDOLLAR(number, [decimals])", "Formats a number as currency text, like DOLLAR.", dollar),
         f!("BAHTTEXT", 1, 1, Text, S, "BAHTTEXT(number)", "Spells out a number in Thai words with Baht.", bahttext),
+        f!("VND", 1, 2, Text, S, "VND(number, [suffix])", "Đọc số tiền bằng chữ tiếng Việt (mặc định: đồng chẵn).", crate::vn::vnd),
+        f!("DOCSO", 1, 2, Text, S, "DOCSO(number, [unit])", "Đọc số nguyên hoặc số thập phân thành chữ tiếng Việt.", crate::vn::docso),
+        f!("USD", 1, 1, Text, S, "USD(number)", "Đọc số tiền đô la Mỹ (USD) thành chữ tiếng Việt.", crate::vn::usd),
+        f!("TCVN3", 1, 1, Text, S, "TCVN3(text)", "Chuyển mã văn bản tiếng Việt từ TCVN3 (ABC .VnTime) sang Unicode.", crate::vn::tcvn3_fn),
+        f!("VNI", 1, 1, Text, S, "VNI(text)", "Chuyển mã văn bản tiếng Việt từ VNI-Windows sang Unicode.", crate::vn::vni_fn),
         f!("T", 1, 1, Text, S, "T(value)", "Returns the value if it is text, otherwise empty text.", t_fn),
         f!(
             "TEXTBEFORE",
@@ -1084,6 +1089,28 @@ mod tests {
         // Huge numbers give text (or #NUM! where rounding overflows), never a panic.
         assert!(matches!(bt(-1e300), Value::Text(_)));
         assert!(matches!(bt(f64::MAX), Value::Text(_) | Value::Error(CellError::Num)));
+    }
+
+    #[test]
+    fn vietnamese_functions() {
+        is_text(
+            ev("VND", vec![n(125_456_000.0)]),
+            "Một trăm hai mươi lăm triệu bốn trăm năm mươi sáu nghìn đồng chẵn",
+        );
+        is_text(ev("VND", vec![n(0.0)]), "Không đồng chẵn");
+        is_text(ev("VND", vec![n(1_005.0), t("đồng")]), "Một nghìn không trăm linh năm đồng");
+        is_text(ev("VND", vec![n(21_024.0), t("VNĐ")]), "Hai mươi mốt nghìn không trăm hai mươi tư VNĐ");
+        is_text(ev("DOCSO", vec![n(15.5), t("mét")]), "Mười lăm phẩy năm mét");
+        is_text(ev("USD", vec![n(1250.5)]), "Một nghìn hai trăm năm mươi đô la Mỹ và năm mươi xu");
+        is_text(ev("USD", vec![n(100.0)]), "Một trăm đô la Mỹ chẵn");
+        is_text(
+            ev("TCVN3", vec![t("C«ng ty TNHH X©y dùng §Þnh S¬n")]),
+            "Công ty TNHH Xây dựng Định Sơn",
+        );
+        is_text(
+            ev("VNI", vec![t("Coâng ty TNHH Xaây döïng Ñònh Sôn")]),
+            "Công ty TNHH Xây dựng Định Sơn",
+        );
     }
 
     #[test]
