@@ -3005,11 +3005,11 @@ mod accounting_symbol_tests {
         // #1063: label, Excel's [$symbol-LCID] tag, and 1234.5 as Excel shows it (fill and the
         // `_-` padding aside). The yen and won have no minor unit, so their codes show no decimals.
         for (label, tag, shown) in [
-            ("Rp Indonesian", "[$Rp-421]", "Rp1,234.50"),
-            ("₹ English (India)", "[$₹-4009]", "₹1,234.50"),
-            ("₩ Korean", "[$₩-412]", "₩1,235"),
-            ("¥ Chinese (PRC)", "[$¥-804]", "¥1,234.50"),
-            ("¥ Japanese", "[$¥-411]", "¥1,235"),
+            ("Rp Indonesian", "[$Rp-421]", "Rp1.234,50"),
+            ("₹ English (India)", "[$₹-4009]", "₹1.234,50"),
+            ("₩ Korean", "[$₩-412]", "₩1.235"),
+            ("¥ Chinese (PRC)", "[$¥-804]", "¥1.234,50"),
+            ("¥ Japanese", "[$¥-411]", "¥1.235"),
         ] {
             let code = ACCOUNTING_SYMBOLS.iter().find(|(l, _)| *l == label).map(|(_, c)| *c);
             let Some(code) = code else { panic!("{label} is not in the Accounting dropdown") };

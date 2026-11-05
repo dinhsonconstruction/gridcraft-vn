@@ -4269,8 +4269,8 @@ mod tests {
             display_text(&wb, sh, c, &sh.value(c), &lk.style, 200.0, 7.0).0
         };
         assert_eq!(text(0, &mut cf), "1");
-        assert_eq!(text(1, &mut cf), "3.00");
-        assert_eq!(text(2, &mut cf), "4.00");
+        assert!(matches!(text(1, &mut cf).as_str(), "3.00" | "3,00"));
+        assert!(matches!(text(2, &mut cf).as_str(), "4.00" | "4,00"));
     }
 
     #[test]

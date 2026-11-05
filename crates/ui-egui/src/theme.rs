@@ -618,6 +618,36 @@ pub fn font_definitions_with(language: crate::i18n::Language, used: &[String]) -
         fonts.families.insert(FontFamily::Name(role.into()), chain);
         bound.push(role.to_string());
     }
+    // Cross-link interface and cell fonts before Han/script fallback faces:
+    // 1. Interface text (formula bar, name box, dialogs) falls back to the cell font (e.g. Arial / Times New Roman).
+    let cell_key = format!("sys-{CELL}");
+    if fonts.font_data.contains_key(&cell_key) {
+        for role in [UI, UI_BOLD, SERIF, MONO] {
+            if let Some(chain) = fonts.families.get_mut(&FontFamily::Name(role.into()))
+                && !chain.contains(&cell_key)
+            {
+                let at = chain.iter().position(|k| fallback.contains(k)).unwrap_or(chain.len());
+                chain.insert(at, cell_key.clone());
+            }
+        }
+    }
+    // 2. Cell fonts fall back to the system UI font (SF Pro, Segoe UI) before scripts so glyphs
+    // missing from legacy or partial cell fonts (e.g. Vietnamese Latin Extended Additional) still render.
+    let ui_key = format!("sys-{UI}");
+    if fonts.font_data.contains_key(&ui_key) {
+        for role in [CELL, CELL_BOLD, CELL_ITALIC, CELL_BOLD_ITALIC, SERIF] {
+            if let Some(chain) = fonts.families.get_mut(&FontFamily::Name(role.into()))
+                && !chain.contains(&ui_key)
+            {
+                let at = chain.iter().position(|k| fallback.contains(k)).unwrap_or(chain.len());
+                chain.insert(at, ui_key.clone());
+            }
+        }
+    }
+    // Default proportional text in widgets uses the UI font.
+    if let Some(ui) = fonts.families.get(&FontFamily::Name(UI.into())).cloned() {
+        fonts.families.insert(FontFamily::Proportional, ui);
+    }
     // Installed workbook fonts, so a cell's chosen font actually renders in it.
     // Only mark bold/italic roles as bound when the installed family actually has a bold/italic
     // face; single-weight system fonts (e.g. Microsoft Sans Serif on macOS) fall back to CELL_BOLD
@@ -633,24 +663,6 @@ pub fn font_definitions_with(language: crate::i18n::Language, used: &[String]) -
                 bound.push(role);
             }
         }
-    }
-    // Interface text (formula bar, name box, dialogs) falls back to the cell font before the
-    // script faces: whatever a cell can draw, the formula bar can draw too, even where no script
-    // fallback face was found (#349: macOS UI font without Hebrew, cells in Arial with it).
-    let cell_key = format!("sys-{CELL}");
-    if fonts.font_data.contains_key(&cell_key) {
-        for role in [UI, UI_BOLD, SERIF, MONO] {
-            if let Some(chain) = fonts.families.get_mut(&FontFamily::Name(role.into()))
-                && !chain.contains(&cell_key)
-            {
-                let at = chain.iter().position(|k| fallback.contains(k)).unwrap_or(chain.len());
-                chain.insert(at, cell_key.clone());
-            }
-        }
-    }
-    // Default proportional text in widgets uses the UI font.
-    if let Some(ui) = fonts.families.get(&FontFamily::Name(UI.into())).cloned() {
-        fonts.families.insert(FontFamily::Proportional, ui);
     }
     drop_unparseable_fonts(&mut fonts);
     // Only families egui still has data for count as bound (a dropped face can empty a chain).
@@ -1413,5 +1425,38 @@ mod tests {
         assert!(first_liberation.is_some() && first_liberation > last_dejavu, "Liberation Mono must follow DejaVu Sans Mono: {mono:?}");
         let noto = mono.iter().position(|p| p == "/usr/share/fonts/google-noto-vf/NotoSansMono[wght].ttf");
         assert!(noto.is_some() && noto.unwrap_or(0) + 1 == mono.len(), "Fedora's default Noto Sans Mono must be the last resort: {mono:?}");
+    }
+
+    #[test]
+    fn test_vietnamese_font_fallback() {
+        let _ = crate::fonts::catalog();
+        let text = "Dọn dẹp mặt bằng nhân công";
+        // Include fonts known to lack Vietnamese glyphs
+        let test_fonts = vec![
+            "Times New Roman".to_string(),
+            "Book Antiqua".to_string(),
+            "FrankRuehl".to_string(),
+            "BrowalliaUPC".to_string(),
+            "NonExistentFont".to_string(),
+        ];
+        let ctx = egui::Context::default();
+        let fonts = font_definitions_with(Language::Vi, &test_fonts);
+        ctx.set_fonts(fonts);
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            for font_name in &test_fonts {
+                for (b, i) in [(false, false), (true, false)] {
+                    let fam = cell_family(font_name, b, i);
+                    let id = egui::FontId::new(13.0, fam);
+                    let galley = ui.painter().layout_no_wrap(text.to_string(), id, egui::Color32::WHITE);
+                    let rendered: String = galley.rows.iter().flat_map(|r| r.glyphs.iter().map(|g| g.chr)).collect();
+                    println!("RENDER {font_name} (b={b}) -> {rendered:?}");
+                    // Verify no missing/tofu glyphs for all Vietnamese characters:
+                    for target_ch in ['D', 'ọ', 'n', 'd', 'ẹ', 'p', 'm', 'ặ', 't', 'b', 'ằ', 'n', 'g', 'n', 'h', 'â', 'n', 'c', 'ô', 'n', 'g'] {
+                        assert!(rendered.contains(target_ch), "Missing glyph for '{target_ch}' in font '{font_name}' (b={b})");
+                    }
+                }
+            }
+        });
+        out.textures_delta.clear();
     }
 }

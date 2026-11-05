@@ -322,6 +322,16 @@ pub fn bind_faces(fonts: &mut egui::FontDefinitions, family: &str, faces: &[Face
         return Vec::new();
     }
     let base: Vec<String> = fonts.families.get(&egui::FontFamily::Proportional).cloned().unwrap_or_default();
+    let cell_chain: Vec<String> = fonts
+        .families
+        .get(&egui::FontFamily::Name(crate::theme::CELL.into()))
+        .cloned()
+        .unwrap_or_default();
+    let ui_chain: Vec<String> = fonts
+        .families
+        .get(&egui::FontFamily::Name(crate::theme::UI.into()))
+        .cloned()
+        .unwrap_or_default();
     let mut bound: Vec<String> = Vec::new();
     for (bold, italic) in [(false, false), (true, false), (false, true), (true, true)] {
         let Some(primary) = pick_face(faces, bold, italic) else { continue };
@@ -343,7 +353,23 @@ pub fn bind_faces(fonts: &mut egui::FontDefinitions, family: &str, faces: &[Face
         if chain.is_empty() {
             continue;
         }
-        chain.extend(base.iter().cloned());
+        // Fall back to system cell and UI fonts before egui's default fonts so that fonts lacking
+        // localized scripts (e.g. Vietnamese Latin Extended Additional, CJK) fall back to system fonts.
+        let style_cell = match (bold, italic) {
+            (true, true) => format!("sys-{}", crate::theme::CELL_BOLD_ITALIC),
+            (true, false) => format!("sys-{}", crate::theme::CELL_BOLD),
+            (false, true) => format!("sys-{}", crate::theme::CELL_ITALIC),
+            (false, false) => format!("sys-{}", crate::theme::CELL),
+        };
+        for fallback_key in std::iter::once(style_cell)
+            .chain(cell_chain.iter().cloned())
+            .chain(ui_chain.iter().cloned())
+            .chain(base.iter().cloned())
+        {
+            if fonts.font_data.contains_key(&fallback_key) && !chain.contains(&fallback_key) {
+                chain.push(fallback_key);
+            }
+        }
         let role = role_key(family, bold, italic);
         fonts.families.insert(egui::FontFamily::Name(role.clone().into()), chain);
         bound.push(role);
