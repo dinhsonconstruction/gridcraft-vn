@@ -15,7 +15,7 @@ use gridcraft_core::{CellError, DateSystem, Value};
 pub use builtin::{builtin_format, builtin_id};
 pub use decimal::format_general_fit;
 
-use parse::{SecKind, Section, Tok};
+use parse::{DatePart, SecKind, Section, Tok};
 use render::Out;
 
 /// Width (in characters) of General output in a cell.
@@ -152,14 +152,7 @@ impl NumberFormat {
                 inner: Arc::new(Inner { code: code.to_string(), general: true, sections: Vec::new(), num_sections: 0, text_section: None }),
             };
         }
-        let parse_code = if trimmed.eq_ignore_ascii_case("m/d/yyyy") || trimmed.eq_ignore_ascii_case("mm/dd/yyyy") {
-            "dd/mm/yyyy"
-        } else if trimmed.eq_ignore_ascii_case("m/d/yyyy h:mm") || trimmed.eq_ignore_ascii_case("mm/dd/yyyy h:mm") {
-            "dd/mm/yyyy h:mm"
-        } else {
-            code
-        };
-        let sections = parse::parse_sections(parse_code);
+        let sections = parse::parse_sections(code);
         let len = sections.len();
         let last_is_text = sections.last().is_some_and(|s| s.kind == SecKind::Text);
         let text_section = if len >= 4 {
@@ -198,6 +191,18 @@ impl NumberFormat {
     /// True when the code contains date or time tokens.
     pub fn is_date(&self) -> bool {
         self.num_sections().iter().any(|s| s.kind == SecKind::Date)
+    }
+
+    /// For a date or time format, whether the section that formats `value` shows calendar parts (year, month,
+    /// day) and whether it shows time parts, as `(date, time)`. `None` for any other format and for
+    /// elapsed-time codes like `[h]:mm`, whose value is a duration, not a moment.
+    pub fn date_shape(&self, value: f64) -> Option<(bool, bool)> {
+        let s = self.select(value).map(|(s, _)| s).filter(|s| s.kind == SecKind::Date)?;
+        let parts = || s.toks.iter().filter_map(|t| if let Tok::Date(d) = t { Some(*d) } else { None });
+        if parts().any(|d| matches!(d, DatePart::ElapsedH(_) | DatePart::ElapsedM(_) | DatePart::ElapsedS(_))) {
+            return None;
+        }
+        Some((parts().any(DatePart::is_calendar), parts().any(|d| !d.is_calendar())))
     }
 
     pub fn is_percent(&self) -> bool {

@@ -285,12 +285,12 @@ fn parse_date(t: &str, sys: DateSystem) -> Option<(f64, &'static str)> {
         {
             return valid_ymd(sys, y, m, d).map(|s| (s, "yyyy-mm-dd"));
         }
-        if let (Some(d), Some(m), Some(y)) = (num(a), num(b), num(c)) {
+        if let (Some(p1), Some(p2), Some(y)) = (num(a), num(b), num(c)) {
             let y = if c.len() <= 2 { if y < 30 { 2000 + y } else { 1900 + y } } else { y };
-            if let Some(s) = valid_ymd(sys, y, m, d) {
+            if let Some(s) = valid_ymd(sys, y, p1, p2) {
                 return Some((s, "dd/mm/yyyy"));
             }
-            if let Some(s) = valid_ymd(sys, y, d, m) {
+            if let Some(s) = valid_ymd(sys, y, p2, p1) {
                 return Some((s, "dd/mm/yyyy"));
             }
         }
@@ -304,14 +304,17 @@ fn parse_date(t: &str, sys: DateSystem) -> Option<(f64, &'static str)> {
         let (a, b) = (parts[0].trim(), parts[1].trim());
         // m/d in the current year is ambiguous without a clock; use month/day of 2026? Excel uses
         // the current year. We accept d-mmm / mmm-d only with month names, and m/d → current year.
-        if let (Some(d), Some(m)) = (num(a), num(b)) {
+        if let (Some(p1), Some(p2)) = (num(a), num(b)) {
             let y = current_year();
-            if (1..=12).contains(&m) && (1..=31).contains(&d) {
-                return valid_ymd(sys, y, m, d).map(|s| (s, "dd/mm/yyyy"));
+            if (1..=12).contains(&p1) && (1..=31).contains(&p2) {
+                return valid_ymd(sys, y, p1, p2).map(|s| (s, "dd/mm/yyyy"));
+            }
+            if (1..=12).contains(&p2) && (1..=31).contains(&p1) {
+                return valid_ymd(sys, y, p2, p1).map(|s| (s, "dd/mm/yyyy"));
             }
             // m/yyyy
-            if (1..=12).contains(&d) && b.len() == 4 {
-                return valid_ymd(sys, m, d, 1).map(|s| (s, "mmm-yy"));
+            if (1..=12).contains(&p1) && b.len() == 4 {
+                return valid_ymd(sys, p2, p1, 1).map(|s| (s, "mmm-yy"));
             }
         }
         if let (Some(d), Some(m)) = (num(a), month_from_name(b)) {
