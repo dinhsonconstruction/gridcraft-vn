@@ -1,3 +1,5 @@
+use gridcraft_core::{MAX_COLS, MAX_ROWS};
+
 use super::{
     CellRef, EngineError, Json, RangeRef, Result, Session, StyleId, bad, edit, f64_param, parse_lines, split_sheet, str_param, target_sheet,
 };
@@ -230,23 +232,58 @@ pub(super) fn default_width(s: &mut Session, p: &Json) -> Result<Json> {
     })
 }
 
+/// Sliver thresholds (pixels at 96 dpi) collapsed back to default size on Unhide:
+/// `2.0 pt` (`2.67 px`) for row height and `1.5 chars` (`16.0 px`, covering `width="1"` / `0`) for column width.
+const MIN_UNHIDE_ROW_PX: f32 = 2.0 * 4.0 / 3.0 + 0.01;
+const MIN_UNHIDE_COL_PX: f32 = 16.0;
+
 pub(super) fn hide(s: &mut Session, p: &Json, rows: bool, on: bool) -> Result<Json> {
     let (si, lines) = line_targets(s, p, rows)?;
+    let max_idx = if rows { MAX_ROWS - 1 } else { MAX_COLS - 1 };
+    let min_px = if rows { MIN_UNHIDE_ROW_PX } else { MIN_UNHIDE_COL_PX };
     edit(s, |cx| {
         let sh = cx.sheet_mut(si)?;
+        let map = if rows { &mut sh.rows } else { &mut sh.cols };
         for (a, b) in lines {
-            // Unhiding a single selected line also reveals hidden neighbours (Excel needs the
-            // lines on both sides selected; we're forgiving).
-            let (a, b) = if !on && a == b { (a.saturating_sub(1), b + 1) } else { (a, b) };
-            for i in a..=b.min(a.saturating_add(1_048_575)) {
-                let map = if rows { &mut sh.rows } else { &mut sh.cols };
-                if on {
-                    map.entry(i).or_default().hidden = true;
-                } else if let Some(e) = map.get_mut(&i) {
-                    e.hidden = false;
-                    if e.size == Some(0.0) {
-                        e.size = None;
+            let (mut start, mut end) = (a.min(max_idx), b.min(max_idx));
+            if !on {
+                if start == end {
+                    // Unhiding a single selected line reveals the entire contiguous hidden block
+                    // immediately before it (down to 0 so hidden Row 1 / Col A is reachable from
+                    // its first visible neighbour) and immediately after it.
+                    while start > 0 && map.get(&(start - 1)).is_some_and(|e| e.hidden) {
+                        start -= 1;
                     }
+                    while end < max_idx && map.get(&(end + 1)).is_some_and(|e| e.hidden) {
+                        end += 1;
+                    }
+                } else {
+                    // Multi-line range: if either endpoint lands inside a contiguous hidden run,
+                    // extend to finish that run without touching separate hidden blocks outside
+                    // visible boundary lines.
+                    if map.get(&start).is_some_and(|e| e.hidden) {
+                        while start > 0 && map.get(&(start - 1)).is_some_and(|e| e.hidden) {
+                            start -= 1;
+                        }
+                    }
+                    if map.get(&end).is_some_and(|e| e.hidden) {
+                        while end < max_idx && map.get(&(end + 1)).is_some_and(|e| e.hidden) {
+                            end += 1;
+                        }
+                    }
+                }
+                for (_, e) in map.range_mut(start..=end) {
+                    e.hidden = false;
+                    if e.size.is_some_and(|sz| sz <= min_px) {
+                        e.size = None;
+                        if rows {
+                            e.custom = false;
+                        }
+                    }
+                }
+            } else {
+                for i in start..=end.min(start.saturating_add(1_048_575)) {
+                    map.entry(i).or_default().hidden = true;
                 }
             }
         }

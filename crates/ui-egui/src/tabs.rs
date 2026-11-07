@@ -291,7 +291,11 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                         if ui.button(app.ui.language.tr("Hide")).clicked() {
                                             app.run_or_alert("sheet.hide", json!({"sheet": i}));
                                         }
-                                        if ui.button(app.ui.language.tr("Unhide…")).clicked() {
+                                        let has_hidden_sheets = app
+                                            .session
+                                            .active()
+                                            .is_some_and(|d| d.wb.sheets.iter().any(|s| s.visibility == Visibility::Hidden));
+                                        if ui.add_enabled(has_hidden_sheets, egui::Button::new(app.ui.language.tr("Unhide…"))).clicked() {
                                             app.run_or_alert("sheet.unhide", json!({}));
                                         }
                                         ui.separator();

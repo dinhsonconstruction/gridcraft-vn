@@ -29,6 +29,8 @@ impl SheetApp {
             // Text boxes and shapes name their own typefaces.
             names.extend(d.wb.sheets.iter().flat_map(|sh| sh.shapes.iter().filter_map(|s| s.format.font.clone())));
         }
+        names.sort();
+        names.dedup();
         names
     }
 

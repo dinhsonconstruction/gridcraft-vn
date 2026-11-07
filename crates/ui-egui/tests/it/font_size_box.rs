@@ -76,20 +76,23 @@ fn typed_size_is_applied_exactly_to_the_selection() {
 #[test]
 fn out_of_range_or_not_a_number_changes_nothing() {
     let mut h = harness();
+    let default_size = size(&h, "A1");
     type_size(&mut h, "500");
     let (_, text) = h.state().message.clone().expect("500 is refused with a message");
     assert!(text.contains("between 1 and 409"), "{text}");
-    assert_eq!(size(&h, "A1"), 11.0);
+    assert_eq!(size(&h, "A1"), default_size);
 
     let mut h = harness();
     type_size(&mut h, "abc");
     assert!(h.state().message.is_none());
-    assert_eq!(size(&h, "A1"), 11.0, "text that is not a number reverts");
+    assert_eq!(size(&h, "A1"), default_size, "text that is not a number reverts");
 }
 
 #[test]
 fn escape_cancels_the_typed_size() {
     let mut h = harness();
+    let default_size = size(&h, "A1");
+    let default_label = format!("{}", default_size as i32);
     key(&mut h, Key::F10);
     for k in [Key::H, Key::F, Key::S] {
         h.input_mut().events.push(Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
@@ -101,12 +104,12 @@ fn escape_cancels_the_typed_size() {
     h.run_steps(1);
     key(&mut h, Key::Escape);
     h.run_steps(3);
-    assert_eq!(size(&h, "A1"), 11.0);
-    assert!(h.get_all_by_role(Role::TextInput).any(|n| n.value().as_deref() == Some("11")), "the box shows the cell's size again");
+    assert_eq!(size(&h, "A1"), default_size);
+    assert!(h.get_all_by_role(Role::TextInput).any(|n| n.value().as_deref() == Some(default_label.as_str())), "the box shows the cell's size again");
 }
 
 #[test]
-/// The size list has no filter; clicking 16 applies it, and Down then Enter picks 12.
+/// The size list has no filter; clicking 16 applies it, and Down then Enter picks the next standard size.
 fn the_arrow_opens_the_plain_list_of_sizes() {
     let mut h = harness();
     h.get_by_role_and_label(Role::Button, "Font Size").click();
@@ -118,12 +121,14 @@ fn the_arrow_opens_the_plain_list_of_sizes() {
     assert_eq!(size(&h, "B2"), 16.0, "clicking a size applies it");
 
     let mut h = harness();
+    let default_size = size(&h, "A1");
+    let expected_next = if (default_size - 13.0).abs() < 0.01 { 14.0 } else { 12.0 };
     h.get_by_role_and_label(Role::Button, "Font Size").click();
     h.run_steps(3);
     key(&mut h, Key::ArrowDown);
     key(&mut h, Key::Enter);
     h.run_steps(3);
-    assert_eq!(size(&h, "A1"), 12.0, "Down from 11 then Enter picks 12");
+    assert_eq!(size(&h, "A1"), expected_next, "Down from {default_size} then Enter picks {expected_next}");
 }
 
 /// The on-screen box of the painted text `text` that overlaps `within`. The grid's row headers
@@ -147,9 +152,15 @@ fn painted_text(h: &Harness, text: &str, within: Rect) -> Rect {
 /// 4 pt above the Font name's baseline.
 fn the_size_is_vertically_centered_in_its_box() {
     let h = harness();
+    let (default_label, font_name) = {
+        let d = h.state().session.active().unwrap();
+        let sh = d.wb.active().unwrap();
+        let st = d.wb.styles.get(sh.style_id(CellRef::parse("A1").unwrap()));
+        (format!("{}", st.font.size as i32), st.font.name.clone())
+    };
     let field = h.get_by_role_and_label(Role::TextInput, "Font Size").rect();
-    let value = painted_text(&h, "11", field);
-    let name = painted_text(&h, "Calibri", Rect::EVERYTHING);
+    let value = painted_text(&h, &default_label, field);
+    let name = painted_text(&h, &font_name, Rect::EVERYTHING);
     assert!((value.center().y - field.center().y).abs() <= 1.0, "the size is centered in its box: {value:?} in {field:?}");
     assert!((value.center().y - name.center().y).abs() <= 1.0, "the size is on the Font name's baseline: {value:?} against {name:?}");
 }

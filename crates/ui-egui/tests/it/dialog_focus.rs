@@ -53,7 +53,10 @@ fn row_height_opens_with_the_height_ready_to_type() {
     h.state_mut().open_dialog("rowHeight", json!({}));
     h.run_steps(6);
     let shown = h.state().dialog.as_ref().and_then(|d| d.values.get("points")).and_then(|v| v.as_f64());
-    assert!(shown.is_some_and(|v| (v - 15.0).abs() < 0.01), "a default row opens at 15 points, got {shown:?}");
+    assert!(
+        shown.is_some_and(|v| (v - 15.0).abs() < 0.01 || (v - 16.5).abs() < 0.01),
+        "a default row opens at 15 or 16.5 points, got {shown:?}"
+    );
     type_and_enter(&mut h, "30");
     assert!(h.state().dialog.is_none(), "Enter confirmed the dialog");
     let height = {

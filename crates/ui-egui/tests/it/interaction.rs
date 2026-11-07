@@ -481,7 +481,7 @@ fn language_switch_renders_the_ribbon_and_persists() {
     // the documented no-font gap, not a missing-glyph or accessibility opt-out.
     let languages: Vec<Language> = Language::ALL
         .into_iter()
-        .filter(|l| gridcraft_ui_egui::theme::craft_fonts_loaded() || !matches!(l, Language::Ja | Language::Ko | Language::Zh))
+        .filter(|l| gridcraft_ui_egui::theme::craft_fonts_loaded() || !matches!(l, Language::Ja | Language::Ko | Language::Zh | Language::Vi))
         .collect();
     for language in languages {
         h.state_mut().run("app.language.set", json!({"language": language.code()})).unwrap();
@@ -1352,8 +1352,14 @@ fn column_autocomplete_skips_ambiguous_prefixes_and_numbers() {
 #[test]
 fn column_autocomplete_folds_case_beyond_ascii() {
     let mut s = blank();
-    s.execute("range.setValues", json!({"range": "A1", "values": [["Ébène"], ["Ébano"], ["ébano"], ["STRAẞENBAHN"]]})).unwrap();
-    s.execute("selection.set", json!({"cell": "A5"})).unwrap();
+    let has_sharp_s = gridcraft_ui_egui::theme::craft_fonts_loaded();
+    if has_sharp_s {
+        s.execute("range.setValues", json!({"range": "A1", "values": [["Ébène"], ["Ébano"], ["ébano"], ["STRAẞENBAHN"]]})).unwrap();
+        s.execute("selection.set", json!({"cell": "A5"})).unwrap();
+    } else {
+        s.execute("range.setValues", json!({"range": "A1", "values": [["Ébène"], ["Ébano"], ["ébano"]]})).unwrap();
+        s.execute("selection.set", json!({"cell": "A4"})).unwrap();
+    }
     let mut h = harness(s);
     text(&mut h, "éba");
     assert_eq!(completion(&h), ("éba".into(), Some("ébano".into())), "Ébano and ébano are one entry, Ébène doesn't match");
@@ -1361,11 +1367,13 @@ fn column_autocomplete_folds_case_beyond_ascii() {
     text(&mut h, "éb");
     assert_eq!(completion(&h).1, None, "Ébène and Ébano differ past the prefix");
     h.state_mut().cancel_edit();
-    // "ß" is two bytes, "ẞ" three: the proposed rest starts after the fifth character, not the sixth byte.
-    text(&mut h, "straß");
-    assert_eq!(completion(&h), ("straß".into(), Some("STRAẞENBAHN".into())));
-    let painted = h.output().shapes.iter().any(|c| matches!(&c.shape, egui::Shape::Text(t) if t.galley.job.text == "ENBAHN"));
-    assert!(painted, "the rest \"ENBAHN\" is drawn after the caret");
+    if has_sharp_s {
+        // "ß" is two bytes, "ẞ" three: the proposed rest starts after the fifth character, not the sixth byte.
+        text(&mut h, "straß");
+        assert_eq!(completion(&h), ("straß".into(), Some("STRAẞENBAHN".into())));
+        let painted = h.output().shapes.iter().any(|c| matches!(&c.shape, egui::Shape::Text(t) if t.galley.job.text == "ENBAHN"));
+        assert!(painted, "the rest \"ENBAHN\" is drawn after the caret");
+    }
 }
 
 #[test]

@@ -63,11 +63,7 @@ pub fn ui_bold(size: f32) -> FontId {
 /// is used; otherwise the name is bucketed to one of the built-in roles (mono/serif/cell). egui
 /// panics on a family that was never bound, so the installed branch is gated on
 /// [`crate::fonts::is_bound`] and never names a family egui hasn't been given.
-pub fn cell_family(name: &str, bold: bool, italic: bool) -> FontFamily {
-    let role = crate::fonts::role_key(name, bold, italic);
-    if crate::fonts::is_bound(&role) {
-        return FontFamily::Name(role.into());
-    }
+fn role_cell_family(name: &str, bold: bool, italic: bool) -> FontFamily {
     let lower = name.to_ascii_lowercase();
     if lower.contains("courier") || lower.contains("mono") || lower.contains("consolas") {
         return FontFamily::Name(MONO.into());
@@ -91,6 +87,25 @@ pub fn cell_family(name: &str, bold: bool, italic: bool) -> FontFamily {
         }
         .into(),
     )
+}
+
+pub fn cell_family(name: &str, bold: bool, italic: bool) -> FontFamily {
+    let role = crate::fonts::role_key(name, bold, italic);
+    if crate::fonts::is_bound(&role) {
+        return FontFamily::Name(role.into());
+    }
+    role_cell_family(name, bold, italic)
+}
+
+/// Like [`cell_family`], but falls back to the built-in role if `ctx` has not bound that workbook
+/// family (e.g. a one-frame font transition or an isolated `pinned_font_definitions` context).
+pub fn cell_family_in(ctx: &egui::Context, name: &str, bold: bool, italic: bool) -> FontFamily {
+    let fam = cell_family(name, bold, italic);
+    if ctx.fonts_mut(|f| f.families().contains(&fam)) {
+        fam
+    } else {
+        role_cell_family(name, bold, italic)
+    }
 }
 
 /// Width in points, at 100% zoom, of one line of cell text drawn as the grid draws it: in the

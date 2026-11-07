@@ -251,7 +251,7 @@ fn paint_page(p: &egui::Painter, rect: Rect, paper_w: f32, page: &Json, wb: &gri
                     }
                 }
                 let fsize = (style.font.size * per_pt * print_scale).clamp(2.5, 16.0);
-                let font_id = egui::FontId::new(fsize, theme::cell_family(&style.font.name, style.font.bold, style.font.italic));
+                let font_id = egui::FontId::new(fsize, theme::cell_family_in(cp.ctx(), &style.font.name, style.font.bold, style.font.italic));
                 let fg = style.font.color.resolve(&wb.theme).map_or(t.cell_text, theme::color32);
                 let clip = text_rect.intersect(body);
                 if clip.is_positive() {

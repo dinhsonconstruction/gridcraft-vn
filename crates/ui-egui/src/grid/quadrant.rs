@@ -360,7 +360,7 @@ fn paint_cell(q: &QuadrantPaint<'_>, painted: &(CellRef, Rect, Look, Option<CfLo
     let rect = &text_rect;
     let st = &lk.style;
     let size = st.font.size * 96.0 / 72.0 * z;
-    let fam = theme::cell_family(&st.font.name, st.font.bold, st.font.italic);
+    let fam = theme::cell_family_in(p.ctx(), &st.font.name, st.font.bold, st.font.italic);
     let font = FontId::new(size, fam);
     // Digits fit by the cell's own font and size, not the default 11pt (9pt marks in narrow columns).
     let char_w = p.layout_no_wrap("0".to_string(), font.clone(), Color32::PLACEHOLDER).size().x.max(1.0);

@@ -52,7 +52,7 @@ fn fixture() -> (Harness, Objects) {
         equation: ObjRef::new(ObjKind::Equation, equation),
         slicer: ObjRef::new(ObjKind::Slicer, slicer),
     };
-    let mut h = egui_kittest::Harness::builder()
+    let mut h = crate::common::builder()
         .with_size(vec2(1400.0, 900.0))
         .with_step_dt(1.0 / 60.0)
         .with_os(egui::os::OperatingSystem::Mac)
@@ -62,7 +62,7 @@ fn fixture() -> (Harness, Objects) {
                 app.logic(&ctx);
                 app.ui(ui);
             },
-            SheetApp::new(s, Default::default()),
+            crate::common::app(s),
         );
     h.run_steps(4);
     (h, objs)

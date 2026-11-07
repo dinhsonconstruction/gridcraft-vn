@@ -270,9 +270,9 @@ fn handle_header_autofit(app: &mut SheetApp, input: &InteractionInput<'_>) -> bo
     let Some(p) = pos else { return false };
 
     let unhide = if in_col_header {
-        hidden_col_edge(geo, sh, p.x).map(|col| ("home.unhideColumns", json!({"cols": RangeRef::cols(col, col).a1()})))
+        double_click_hidden_col_span(geo, sh, p.x).map(|(a, b)| ("home.unhideColumns", json!({"cols": RangeRef::cols(a, b).a1()})))
     } else if in_row_header {
-        hidden_row_edge(geo, sh, p.y).map(|row| ("home.unhideRows", json!({"rows": RangeRef::rows(row, row).a1()})))
+        double_click_hidden_row_span(geo, sh, p.y).map(|(a, b)| ("home.unhideRows", json!({"rows": RangeRef::rows(a, b).a1()})))
     } else {
         None
     };
@@ -567,8 +567,36 @@ fn handle_context_menu_and_keyboard(app: &mut SheetApp, input: &InteractionInput
                 }
             });
             if !inside {
-                let range = if rows { RangeRef::rows(idx, idx) } else { RangeRef::cols(idx, idx) };
-                let _ = app.session.run("selection.set", json!({"range": range.a1()}));
+                // If the user selected a multi-row / multi-column cell range (e.g. A33:A51 across
+                // hidden rows) and right-clicks a matching Row/Column Header, promote that span to
+                // full rows/columns instead of collapsing the selection to a single line.
+                let spans_clicked = sel.ranges.iter().any(|r| {
+                    if rows {
+                        !r.is_full_cols() && idx >= r.start.row && idx <= r.end.row
+                    } else {
+                        !r.is_full_rows() && idx >= r.start.col && idx <= r.end.col
+                    }
+                });
+                let target = if spans_clicked {
+                    sel.ranges
+                        .iter()
+                        .map(|r| {
+                            if rows && !r.is_full_cols() {
+                                RangeRef::rows(r.start.row, r.end.row).a1()
+                            } else if !rows && !r.is_full_rows() {
+                                RangeRef::cols(r.start.col, r.end.col).a1()
+                            } else {
+                                r.a1()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",")
+                } else if rows {
+                    RangeRef::rows(idx, idx).a1()
+                } else {
+                    RangeRef::cols(idx, idx).a1()
+                };
+                let _ = app.session.run("selection.set", json!({"range": target}));
             }
             app.grid.header_menu = Some((geo.mirror_pos(p), rows));
         } else {
@@ -1024,6 +1052,50 @@ pub(super) fn hidden_col_edge(geo: &Geo, sh: &Sheet, x: f32) -> Option<u32> {
 
 pub(super) fn hidden_row_edge(geo: &Geo, sh: &Sheet, y: f32) -> Option<u32> {
     row_edge(geo, sh, y).map(|(r, _)| r).filter(|&r| sh.row_height(r) <= 0.0)
+}
+
+/// Full contiguous hidden column span `(start, end)` at the seam double-clicked near `x`
+/// (accepting both sides of the double-bar hidden indicator so a 1–3 px offset never misfires AutoFit).
+pub(super) fn double_click_hidden_col_span(geo: &Geo, sh: &Sheet, x: f32) -> Option<(u32, u32)> {
+    let is_hidden = |c: u32| sh.cols.get(&c).is_some_and(|e| e.hidden) || sh.col_width(c) <= 0.0;
+    let (c, _) = col_edge(geo, sh, x)?;
+    let seed = if is_hidden(c) {
+        c
+    } else if c + 1 < MAX_COLS && geo.same_col_pane(c, c + 1) && is_hidden(c + 1) {
+        c + 1
+    } else {
+        return None;
+    };
+    let (mut start, mut end) = (seed, seed);
+    while start > 0 && is_hidden(start - 1) {
+        start -= 1;
+    }
+    while end + 1 < MAX_COLS && is_hidden(end + 1) {
+        end += 1;
+    }
+    Some((start, end))
+}
+
+/// Full contiguous hidden row span `(start, end)` at the seam double-clicked near `y`
+/// (accepting both sides of the double-bar hidden indicator so a 1–3 px offset never misfires AutoFit).
+pub(super) fn double_click_hidden_row_span(geo: &Geo, sh: &Sheet, y: f32) -> Option<(u32, u32)> {
+    let is_hidden = |r: u32| sh.rows.get(&r).is_some_and(|e| e.hidden);
+    let (r, _) = row_edge(geo, sh, y)?;
+    let seed = if is_hidden(r) {
+        r
+    } else if r + 1 < MAX_ROWS && ((r < geo.fr) == (r + 1 < geo.fr)) && is_hidden(r + 1) {
+        r + 1
+    } else {
+        return None;
+    };
+    let (mut start, mut end) = (seed, seed);
+    while start > 0 && is_hidden(start - 1) {
+        start -= 1;
+    }
+    while end + 1 < MAX_ROWS && is_hidden(end + 1) {
+        end += 1;
+    }
+    Some((start, end))
 }
 
 /// Moves the dragged object, or resizes it from the grabbed handle, to follow the pointer at `p`

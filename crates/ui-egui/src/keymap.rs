@@ -139,6 +139,13 @@ fn lookup_control_shortcuts(ctx: LookupContext) -> Option<Shortcut> {
         // Windows Ctrl+; is in `ribbon::shortcut`; Excel for Mac uses Control+; and Command+;.
         Semicolon if mac && ctrl => Shortcut::Date,
         Semicolon if mac && cmd && !s => Shortcut::Time,
+        // Hide / Unhide Rows & Columns: Windows uses Ctrl+(Shift)+9/0; Excel for Mac uses
+        // Control+(Shift)+9/0, and GridCraft on Mac also accepts Command+(Shift)+9/0.
+        // Matching physical `Num9`/`Num0` here also works when Shift turns 9/0 into `(`/`)`.
+        Num9 if (ctrl || cmd) && s => run("home.unhideRows"),
+        Num9 if (ctrl || cmd) && !s => run("home.hideRows"),
+        Num0 if (ctrl || cmd) && s => run("home.unhideColumns"),
+        Num0 if (ctrl || cmd) && !s => run("home.hideColumns"),
         _ => return None,
     })
 }

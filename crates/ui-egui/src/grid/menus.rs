@@ -171,6 +171,36 @@ pub(super) fn context_menu(app: &mut SheetApp, ui: &mut egui::Ui) {
                 items.insert(i + 1, ("-", ""));
                 items.insert(i + 2, ("Show Details", "pivot.showDetails"));
             }
+            let (offer_unhide_rows, offer_unhide_cols) = app
+                .session
+                .active()
+                .and_then(|d| {
+                    let sh = d.wb.active()?;
+                    let rows = d.selection.ranges.iter().any(|r| {
+                        let lo = r.start.row.saturating_sub(1);
+                        let hi = r.end.row.saturating_add(1);
+                        sh.rows.range(lo..=hi).any(|(_, e)| e.hidden)
+                    });
+                    let cols = d.selection.ranges.iter().any(|r| {
+                        let lo = r.start.col.saturating_sub(1);
+                        let hi = r.end.col.saturating_add(1);
+                        sh.cols.range(lo..=hi).any(|(_, e)| e.hidden)
+                    });
+                    Some((rows, cols))
+                })
+                .unwrap_or((false, false));
+            if (offer_unhide_rows || offer_unhide_cols)
+                && let Some(i) = items.iter().position(|(_, id)| *id == "edit.clearContents")
+            {
+                let mut pos = i + 1;
+                if offer_unhide_rows {
+                    items.insert(pos, ("Unhide Rows", "home.unhideRows"));
+                    pos += 1;
+                }
+                if offer_unhide_cols {
+                    items.insert(pos, ("Unhide Columns", "home.unhideColumns"));
+                }
+            }
             let lang = crate::i18n::current(ui.ctx());
             for (label, id) in items {
                 if label == "-" {

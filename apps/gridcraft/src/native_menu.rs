@@ -115,10 +115,10 @@ fn tree() -> Vec<(&'static str, Vec<Entry>)> {
                 ("Column Width…", "dialog:columnWidth", None),
                 ("AutoFit Column Width", "home.autofitColumnWidth", None),
                 ("-", "", None),
-                ("Hide Rows", "home.hideRows", None),
-                ("Unhide Rows", "home.unhideRows", None),
-                ("Hide Columns", "home.hideColumns", None),
-                ("Unhide Columns", "home.unhideColumns", None),
+                ("Hide Rows", "home.hideRows", Some("CMD+9")),
+                ("Unhide Rows", "home.unhideRows", Some("CMD+SHIFT+9")),
+                ("Hide Columns", "home.hideColumns", Some("CMD+0")),
+                ("Unhide Columns", "home.unhideColumns", Some("CMD+SHIFT+0")),
                 ("-", "", None),
                 ("Rename Sheet…", "dialog:renameSheet", None),
                 ("Hide Sheet", "sheet.hide", None),
@@ -422,5 +422,32 @@ mod tests {
         }
         assert!(!super::select_theme(&mut app, "view.formulaBar"));
         assert_eq!(app.ui.theme_mode(), "light");
+    }
+
+    #[test]
+    fn format_menu_accelerators_parse_and_cover_hide_unhide() {
+        use std::str::FromStr as _;
+        let tree = super::tree();
+        for (menu, entries) in &tree {
+            for (label, _, acc) in entries {
+                if let Some(a) = acc {
+                    assert!(
+                        muda::accelerator::Accelerator::from_str(a).is_ok(),
+                        "{menu} -> {label}: invalid accelerator {a:?}"
+                    );
+                }
+            }
+        }
+        let (_, format) = tree.iter().find(|(title, _)| *title == "Format").expect("Format menu");
+        for (label, cmd, expected_acc) in [
+            ("Hide Rows", "home.hideRows", Some("CMD+9")),
+            ("Unhide Rows", "home.unhideRows", Some("CMD+SHIFT+9")),
+            ("Hide Columns", "home.hideColumns", Some("CMD+0")),
+            ("Unhide Columns", "home.unhideColumns", Some("CMD+SHIFT+0")),
+        ] {
+            let entry = format.iter().find(|e| e.0 == label).unwrap_or_else(|| panic!("missing {label}"));
+            assert_eq!(entry.1, cmd);
+            assert_eq!(entry.2, expected_acc);
+        }
     }
 }

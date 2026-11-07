@@ -257,8 +257,39 @@ pub(super) fn unhide_sheet(s: &mut Session, p: &Json) -> Result<Json> {
     if s.doc()?.wb.protected_structure {
         return Err(EngineError::Other("The workbook is protected and cannot be changed.".into()));
     }
+    if let Some(list) = p.get("sheets") {
+        let arr = list.as_array().ok_or_else(|| bad("sheets", "expected an array of sheets"))?;
+        if arr.is_empty() {
+            return Err(bad("sheets", "no sheets selected"));
+        }
+        let d = s.doc()?;
+        let mut indices = Vec::with_capacity(arr.len());
+        for item in arr {
+            let i = if let Some(idx) = item.as_u64() {
+                let idx = idx as usize;
+                if idx < d.wb.sheets.len() { idx } else { return Err(bad("sheets", "no such sheet")) }
+            } else if let Some(name) = item.as_str() {
+                d.wb.sheet_index(name).ok_or_else(|| bad("sheets", format!("no sheet named `{name}`")))?
+            } else {
+                return Err(bad("sheets", "expected sheet name or index"));
+            };
+            if !indices.contains(&i) {
+                indices.push(i);
+            }
+        }
+        return edit(s, |cx| {
+            for &i in &indices {
+                cx.sheet_mut(i)?.visibility = Visibility::Visible;
+            }
+            if let Some(&first) = indices.first() {
+                cx.wb.set_active_sheet(first);
+            }
+            Ok(json!({"count": indices.len()}))
+        });
+    }
     if p.get("sheet").is_none() {
-        let hidden: Vec<String> = s.doc()?.wb.sheets.iter().filter(|s| s.visibility != Visibility::Visible).map(|s| s.name.clone()).collect();
+        // Only `Visibility::Hidden` sheets are offered in the UI; `VeryHidden` system sheets stay private, as in Excel.
+        let hidden: Vec<String> = s.doc()?.wb.sheets.iter().filter(|s| s.visibility == Visibility::Hidden).map(|s| s.name.clone()).collect();
         if hidden.is_empty() {
             return Err(EngineError::Other("No sheets are hidden.".into()));
         }

@@ -528,9 +528,9 @@ fn control_keytips_open_dropdowns_and_run_handlers() {
     let mut h = harness(blank());
     sequence(&mut h, &[Key::H, Key::F, Key::F], false);
     assert!(h.state().message.is_none() && h.state().toast.is_none(), "HFF must not raise an error box");
-    // "Calibri" appears twice: once on the combo button (the current font) and
-    // once inside the opened dropdown — a single node would mean it stayed closed.
-    assert!(h.query_all_by_label("Calibri").count() >= 2, "HFF must open the font dropdown");
+    // "Times New Roman" (vn-edition default) appears twice: once on the combo button (the current font)
+    // and once inside the opened dropdown — a single node would mean it stayed closed.
+    assert!(h.query_all_by_label("Times New Roman").count() >= 2, "HFF must open the font dropdown");
 
     // WVF toggles the formula bar: pure UI state, no engine command exists.
     let mut h = harness(blank());
@@ -563,17 +563,17 @@ fn editable_combos_filter_by_typing_and_move_by_arrows() {
     assert_eq!(h.query_all_by_label("Arial").count(), 1, "Enter must apply Arial and close the popup");
     assert_eq!(h.query_all_by_label("Georgia").count(), 0);
 
-    // Arrows alone move through the full list: Calibri -> Cambria -> Candara -> Consolas.
+    // Arrows alone move through the full list: Times New Roman -> Trebuchet MS -> Verdana.
     let mut h = harness(blank());
     sequence(&mut h, &[Key::H, Key::F, Key::F], false);
     h.run_steps(3);
-    for _ in 0..3 {
+    for _ in 0..2 {
         key(&mut h, Key::ArrowDown);
     }
     key(&mut h, Key::Enter);
     h.run_steps(3);
     assert!(h.state().message.is_none() && h.state().toast.is_none());
-    assert_eq!(h.query_all_by_label("Consolas").count(), 1, "Down x3 from Calibri must land on Consolas");
+    assert_eq!(h.query_all_by_label("Verdana").count(), 1, "Down x2 from Times New Roman must land on Verdana");
 
     // Size combo: type a custom size not in the list, Enter applies it.
     let mut h = harness(blank());

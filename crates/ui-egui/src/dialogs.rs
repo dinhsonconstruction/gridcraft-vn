@@ -27,6 +27,7 @@ mod paste;
 mod ref_edit;
 mod show;
 mod spelling;
+mod unhide_sheet;
 mod zoom;
 
 use analysis::toolpak_defaults;
@@ -130,6 +131,22 @@ impl Dialog {
                 "percent" => {
                     self.command = Some("view.zoom");
                     self.values.insert("preset".into(), json!(zoom_preset(value.as_f64().unwrap_or(0.0))));
+                }
+                _ => {}
+            }
+        } else if self.name == "unhideSheet" {
+            match key {
+                "sheet" => {
+                    if let Some(s) = value.as_str() {
+                        self.values.insert("selected".into(), json!([s]));
+                    }
+                }
+                "sheets" | "selected" => {
+                    if let Some(arr) = value.as_array() {
+                        let first = arr.first().and_then(Json::as_str).unwrap_or("");
+                        self.values.insert("sheet".into(), json!(first));
+                        self.values.insert("selected".into(), value.clone());
+                    }
                 }
                 _ => {}
             }
@@ -457,17 +474,34 @@ impl Dialog {
                 json!({}),
             ),
             "unhideSheet" => {
-                let opts: Vec<String> =
-                    p("sheets").as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+                let opts: Vec<String> = p("sheets")
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                    .unwrap_or_else(|| {
+                        app.session
+                            .active()
+                            .map(|doc| {
+                                doc.wb
+                                    .sheets
+                                    .iter()
+                                    .filter(|s| s.visibility == gridcraft_engine::model::Visibility::Hidden)
+                                    .map(|s| s.name.clone())
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    });
                 let first = opts.first().cloned().unwrap_or_default();
-                let mut d = Dialog::form(
+                let selected = if first.is_empty() { json!([]) } else { json!([first]) };
+                let mut d = Dialog::custom(
                     "unhideSheet",
                     "Unhide",
-                    "sheet.unhide",
-                    vec![Text { key: "sheet", label: "Unhide sheet:" }, Note(format!("Hidden: {}", opts.join(", ")))],
-                    json!({"sheet": first}),
+                    json!({
+                        "options": opts,
+                        "sheet": first,
+                        "selected": selected,
+                    }),
                 );
-                d.values.insert("sheet".into(), json!(first));
+                d.command = Some("sheet.unhide");
                 d
             }
             "pasteSpecial" => Dialog::form(

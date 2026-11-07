@@ -18,18 +18,9 @@ fn harness() -> Harness {
 fn harness_with(services: Services) -> Harness {
     let mut session = Session::new();
     session.new_workbook();
-    let mut app = SheetApp::new(session, services);
+    let mut app = crate::common::prepare(SheetApp::new(session, services));
     app.ui.ribbon_tab = "Automate".into();
-    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_ui_state(
-        |ui, app: &mut SheetApp| {
-            let ctx = ui.ctx().clone();
-            app.logic(&ctx);
-            app.ui(ui);
-        },
-        app,
-    );
-    h.run_steps(4);
-    h
+    crate::common::harness_with(crate::common::builder().with_size(egui::vec2(1400.0, 900.0)), app, 4)
 }
 
 fn value(h: &Harness, a: &str) -> Value {
@@ -565,16 +556,8 @@ fn the_editor_fits_a_narrow_window() {
     for size in [egui::vec2(600.0, 480.0), egui::vec2(480.0, 400.0)] {
         let mut session = Session::new();
         session.new_workbook();
-        let app = SheetApp::new(session, Default::default());
-        let mut h = egui_kittest::Harness::builder().with_size(size).build_ui_state(
-            |ui, app: &mut SheetApp| {
-                let ctx = ui.ctx().clone();
-                app.logic(&ctx);
-                app.ui(ui);
-            },
-            app,
-        );
-        h.run_steps(4);
+        let app = crate::common::app(session);
+        let mut h = crate::common::harness_with(crate::common::builder().with_size(size), app, 4);
         three(&mut h);
         h.run_steps(4);
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);

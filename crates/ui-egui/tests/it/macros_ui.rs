@@ -14,18 +14,9 @@ type Harness = egui_kittest::Harness<'static, SheetApp>;
 fn harness(tab: &str) -> Harness {
     let mut session = Session::new();
     session.new_workbook();
-    let mut app = SheetApp::new(session, Default::default());
+    let mut app = crate::common::app(session);
     app.ui.ribbon_tab = tab.into();
-    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
-        |ui, app: &mut SheetApp| {
-            let ctx = ui.ctx().clone();
-            app.logic(&ctx);
-            app.ui(ui);
-        },
-        app,
-    );
-    h.run_steps(4);
-    h
+    crate::common::harness_with(crate::common::builder().with_size(egui::vec2(1280.0, 800.0)), app, 4)
 }
 
 fn value(h: &Harness, a: &str) -> Value {
@@ -113,17 +104,9 @@ fn the_macros_dialog_lists_scripts_and_the_vba_project_beside_macros() {
     s.execute("automate.newScript", json!({"name": "Mark", "commands": [{"command": "cell.set", "params": {"cell": "D4", "input": "script"}}]}))
         .unwrap();
     s.execute("macro.save", json!({"name": "Mark", "steps": []})).unwrap();
-    let mut app = SheetApp::new(s, Default::default());
+    let mut app = crate::common::app(s);
     app.ui.ribbon_tab = "Automate".into();
-    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
-        |ui, app: &mut SheetApp| {
-            let ctx = ui.ctx().clone();
-            app.logic(&ctx);
-            app.ui(ui);
-        },
-        app,
-    );
-    h.run_steps(3);
+    let mut h = crate::common::harness_with(crate::common::builder().with_size(egui::vec2(1280.0, 800.0)), app, 3);
     h.state_mut().open_dialog("macros", json!({}));
     h.run_steps(2);
     // The dialog keeps view.macros (scripts and VBA) as its result, as before.
@@ -258,17 +241,9 @@ fn the_macros_dialog_offers_trust_for_scripts_that_came_with_a_file() {
         .unwrap();
     // As when the workbook was opened with its scripts (#2178).
     s.active_mut().unwrap().scripts_trusted = false;
-    let mut app = SheetApp::new(s, Default::default());
+    let mut app = crate::common::app(s);
     app.ui.ribbon_tab = "Automate".into();
-    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
-        |ui, app: &mut SheetApp| {
-            let ctx = ui.ctx().clone();
-            app.logic(&ctx);
-            app.ui(ui);
-        },
-        app,
-    );
-    h.run_steps(3);
+    let mut h = crate::common::harness_with(crate::common::builder().with_size(egui::vec2(1280.0, 800.0)), app, 3);
     h.state_mut().open_dialog("macros", json!({}));
     h.run_steps(2);
     assert!(h.query_by_label_contains("came from a file and are disabled").is_some());
@@ -290,16 +265,8 @@ fn the_macros_and_record_macro_dialogs_fit_a_narrow_window() {
         let mut s = Session::new();
         s.new_workbook();
         s.execute("macro.save", json!({"name": "Tidy", "steps": []})).unwrap();
-        let app = SheetApp::new(s, Default::default());
-        let mut h = egui_kittest::Harness::builder().with_size(size).build_ui_state(
-            |ui, app: &mut SheetApp| {
-                let ctx = ui.ctx().clone();
-                app.logic(&ctx);
-                app.ui(ui);
-            },
-            app,
-        );
-        h.run_steps(3);
+        let app = crate::common::app(s);
+        let mut h = crate::common::harness_with(crate::common::builder().with_size(size), app, 3);
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
         for (dialog, labels) in [("macros", &["Run", "Delete", "Options…", "Cancel"][..]), ("recordMacro", &["OK", "Cancel"][..])] {
             h.state_mut().open_dialog(dialog, json!({}));

@@ -11,6 +11,7 @@ use super::names::{name_manager, paste_name};
 use super::paste::{paste_special, paste_special_shortcuts};
 use super::ref_edit::{RefLabel, SHEET_DELETED, end_pick, home_sheet_deleted, place_window, ref_edit, window_shown};
 use super::spelling::spelling;
+use super::unhide_sheet::unhide_sheet;
 use super::zoom::zoom;
 use super::{Dialog, Field, Json, Key, Map, RefPick, SheetApp, json, vec2};
 use gridcraft_engine::model::PageOrder;
@@ -116,6 +117,23 @@ pub(crate) fn build_params(d: &Dialog) -> Json {
                 }
             }
         }
+        "unhideSheet" => {
+            let selected: Vec<String> = d
+                .values
+                .get("selected")
+                .and_then(Json::as_array)
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            if selected.len() > 1 {
+                v = json!({"sheets": selected});
+            } else if let Some(first) = selected.first() {
+                v = json!({"sheet": first});
+            } else if let Some(s) = d.values.get("sheet").and_then(Json::as_str) {
+                v = json!({"sheet": s});
+            } else {
+                v = json!({});
+            }
+        }
         _ => {}
     }
     v
@@ -199,6 +217,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                 "goalSeek" => goal_seek(app, ui, &mut d, &mut confirm, &mut open),
                 "equation" => crate::equation::editor(app, ui, &mut d, &mut confirm, &mut open),
                 "pasteSpecial" => paste_special(app, ui, &mut d, &mut confirm, &mut open),
+                "unhideSheet" => unhide_sheet(app, ui, &mut d, &mut confirm, &mut open),
                 "analysisToolPak" => analysis_toolpak(app, ui, &mut d, &mut confirm, &mut open),
                 "solver" => solver(app, ui, &mut d, &mut confirm, &mut open),
                 "solverResults" => solver_results(app, ui, &mut d, &mut open),
