@@ -559,3 +559,38 @@ fn ribbon_paste_prefers_clipboard_text_over_a_picture() {
     assert_eq!(value_at(&h, "D2"), Some(Value::from("words")));
     assert!(pictures(&h).is_empty());
 }
+
+#[test]
+fn copy_rich_publishes_png_only_for_multi_cell_ranges() {
+    let calls: Rc<RefCell<Vec<(String, String, Option<Vec<u8>>)>>> = Rc::new(RefCell::new(Vec::new()));
+    let received = calls.clone();
+    let mut h = harness(Services {
+        copy_rich: Some(Box::new(move |html, text, png| {
+            received.borrow_mut().push((html.to_string(), text.to_string(), png.map(|b| b.to_vec())));
+            Ok(())
+        })),
+        ..Default::default()
+    });
+    // Multi-cell selection A1:B2 produces HTML + text + PNG bytes.
+    h.input_mut().events.push(Event::Copy);
+    h.step();
+    {
+        let c = calls.borrow();
+        assert_eq!(c.len(), 1);
+        assert!(c[0].0.contains("<table"));
+        assert_eq!(c[0].1, "Name\tScore\nAda\t42\n");
+        let png = c[0].2.as_ref().expect("multi-cell copy includes PNG snapshot");
+        assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    }
+
+    // Single-cell selection A1 produces HTML + text without PNG.
+    h.state_mut().run("selection.set", json!({"cell": "A1"})).unwrap();
+    h.input_mut().events.push(Event::Copy);
+    h.step();
+    {
+        let c = calls.borrow();
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[1].1, "Name\n");
+        assert!(c[1].2.is_none(), "single-cell copy must not include PNG");
+    }
+}

@@ -5,22 +5,22 @@ use super::{
 };
 
 /// Resolved look of a cell for painting.
-pub(super) struct Look {
-    pub(super) style: Style,
-    pub(super) fill: Option<Color32>,
-    pub(super) text_color: Color32,
+pub(crate) struct Look {
+    pub(crate) style: Style,
+    pub(crate) fill: Option<Color32>,
+    pub(crate) text_color: Color32,
 }
 
-pub(super) fn col32(c: Color, wb: &Workbook, default: Color32) -> Color32 {
+pub(crate) fn col32(c: Color, wb: &Workbook, default: Color32) -> Color32 {
     c.resolve(&wb.theme).map(theme::color32).unwrap_or(default)
 }
 
-pub(super) fn numfmt_color(c: gridcraft_engine::numfmt::FormatColor) -> Color32 {
+pub(crate) fn numfmt_color(c: gridcraft_engine::numfmt::FormatColor) -> Color32 {
     c.rgb().map(|[r, g, b]| Color32::from_rgb(r, g, b)).unwrap_or(Color32::BLACK)
 }
 
 /// Last column of a Center Across Selection run starting at `start`: it extends over following columns (up to `limit`) while `continues` holds.
-pub(super) fn center_across_end(start: u32, limit: u32, continues: impl Fn(u32) -> bool) -> u32 {
+pub(crate) fn center_across_end(start: u32, limit: u32, continues: impl Fn(u32) -> bool) -> u32 {
     let mut end = start;
     while end < limit && end + 1 < MAX_COLS && continues(end + 1) {
         end += 1;
@@ -28,7 +28,7 @@ pub(super) fn center_across_end(start: u32, limit: u32, continues: impl Fn(u32) 
     end
 }
 
-pub(super) fn look(wb: &Workbook, si: usize, sh: &Sheet, c: CellRef, cf: &mut CfCache) -> (Look, Option<CfLook>) {
+pub(crate) fn look(wb: &Workbook, si: usize, sh: &Sheet, c: CellRef, cf: &mut CfCache) -> (Look, Option<CfLook>) {
     let mut style = wb.styles.get(sh.style_id(c)).clone();
     if let Some(t) = sh.table_at(c) {
         style = gridcraft_engine::tables::table_cell_style(wb, si, t, c);
@@ -97,7 +97,7 @@ pub(super) fn look(wb: &Workbook, si: usize, sh: &Sheet, c: CellRef, cf: &mut Cf
 }
 
 /// Text for a value with General narrowing to the available width.
-pub(super) fn display_text(
+pub(crate) fn display_text(
     wb: &Workbook,
     sh: &Sheet,
     c: CellRef,
@@ -319,7 +319,7 @@ pub(super) fn ink_on(fill: Color32) -> Color32 {
 /// sheet is mirrored afterwards, so an explicit Left or Right is swapped first to end up on the
 /// side the user chose: Align Right stays on the right in either sheet direction, as in Excel.
 /// General alignment is resolved from the value before this and follows the sheet direction.
-pub(super) fn painted_halign(h: HAlign, rtl: bool) -> HAlign {
+pub(crate) fn painted_halign(h: HAlign, rtl: bool) -> HAlign {
     match h {
         HAlign::Left if rtl => HAlign::Right,
         HAlign::Right if rtl => HAlign::Left,

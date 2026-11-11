@@ -1,7 +1,7 @@
 # Đặc tả Tính năng: Nâng cấp GridCraft v0.18.0 VN & Copy Nhiều Ô dạng Ảnh + Text (Chuẩn Excel/Zalo)
 
 **Feature ID**: `001-v0180-clipboard-image-copy`  
-**Status**: Draft — Ready for Review  
+**Status**: Implemented  
 **Date**: 2026-11-11  
 
 ---

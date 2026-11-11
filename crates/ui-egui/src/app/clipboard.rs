@@ -5,7 +5,8 @@ impl SheetApp {
     /// their existing internal clipboard behavior and do not write to the host clipboard.
     pub fn copy_to_clipboard(&mut self, ctx: &egui::Context, command: &str) {
         // Only ask the engine for HTML when the host can publish it.
-        let result = match self.run_command(command, json!({"html": self.services.copy_html.is_some()})) {
+        let want_html = self.services.copy_rich.is_some() || self.services.copy_html.is_some();
+        let result = match self.run_command(command, json!({"html": want_html})) {
             Ok(result) => result,
             Err(e) => return self.alert(e),
         };
@@ -13,12 +14,20 @@ impl SheetApp {
         // The system clipboard gets this copy, so its text decides what Paste pastes.
         self.clipboard_text_at_copy = None;
         self.cut_text = (command == "edit.cut").then(|| text.replace("\r\n", "\n"));
-        if let Some(html) = result.get("html").and_then(Json::as_str)
-            && let Some(copy_html) = &mut self.services.copy_html
-        {
-            match copy_html(html, text) {
-                Ok(()) => return,
-                Err(error) => log::warn!("HTML clipboard unavailable; copying plain text: {error}"),
+        if let Some(html) = result.get("html").and_then(Json::as_str) {
+            if self.services.copy_rich.is_some() {
+                let png = self.render_clipboard_png(ctx);
+                if let Some(copy_rich) = &mut self.services.copy_rich {
+                    match copy_rich(html, text, png.as_deref()) {
+                        Ok(()) => return,
+                        Err(error) => log::warn!("Rich clipboard unavailable; copying plain text: {error}"),
+                    }
+                }
+            } else if let Some(copy_html) = &mut self.services.copy_html {
+                match copy_html(html, text) {
+                    Ok(()) => return,
+                    Err(error) => log::warn!("HTML clipboard unavailable; copying plain text: {error}"),
+                }
             }
         }
         ctx.copy_text(text.to_string());
@@ -121,7 +130,7 @@ fn check_picture_size(w: u32, h: u32) -> Result<(), String> {
 }
 
 /// PNG bytes of a clipboard picture, refusing sizes that would exhaust memory.
-fn encode_png(image: &image::RgbaImage) -> Result<Vec<u8>, String> {
+pub(super) fn encode_png(image: &image::RgbaImage) -> Result<Vec<u8>, String> {
     let (w, h) = image.dimensions();
     check_picture_size(w, h)?;
     let mut png = Vec::new();

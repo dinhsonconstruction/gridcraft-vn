@@ -142,6 +142,34 @@ fn save_prefs(app: &SheetApp) {
     }
 }
 
+/// Write HTML, plain text, and an optional PNG snapshot to the macOS general pasteboard in a
+/// single `clearContents` session so apps like Zalo show a crisp table image preview while still
+/// offering the "Paste as text" toggle (matching Microsoft Excel).
+#[cfg(target_os = "macos")]
+fn write_macos_clipboard(html: &str, text: &str, png: Option<&[u8]>) -> Result<(), String> {
+    use objc2_app_kit::NSPasteboard;
+    use objc2_foundation::{NSData, NSString};
+
+    let pb = NSPasteboard::generalPasteboard();
+    pb.clearContents();
+    if let Some(png_bytes) = png {
+        let data = NSData::with_bytes(png_bytes);
+        let ty = NSString::from_str("public.png");
+        let _ = pb.setData_forType(Some(&data), &ty);
+    }
+    let html_str = NSString::from_str(html);
+    let html_ty = NSString::from_str("public.html");
+    let ok_html = pb.setString_forType(&html_str, &html_ty);
+    let text_str = NSString::from_str(text);
+    let text_ty = NSString::from_str("public.utf8-plain-text");
+    let ok_text = pb.setString_forType(&text_str, &text_ty);
+    if ok_html || ok_text {
+        Ok(())
+    } else {
+        Err("NSPasteboard write failed".into())
+    }
+}
+
 /// Read the system clipboard through the shared handle, creating it on first use.
 fn read_clipboard<T>(
     handle: &RefCell<Option<arboard::Clipboard>>,
@@ -157,8 +185,25 @@ fn read_clipboard<T>(
 fn services() -> Services {
     // Keep the owner alive: X11/Wayland serve clipboard data from this handle.
     let clipboard: Rc<RefCell<Option<arboard::Clipboard>>> = Rc::default();
-    let (html_clipboard, text_clipboard, image_clipboard) = (clipboard.clone(), clipboard.clone(), clipboard.clone());
+    let (rich_clipboard, html_clipboard, text_clipboard, image_clipboard) =
+        (clipboard.clone(), clipboard.clone(), clipboard.clone(), clipboard.clone());
     Services {
+        copy_rich: Some(Box::new(move |html, text, png| {
+            #[cfg(target_os = "macos")]
+            {
+                let _ = &rich_clipboard;
+                write_macos_clipboard(html, text, png)
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = png;
+                let mut clipboard = rich_clipboard.borrow_mut();
+                if clipboard.is_none() {
+                    *clipboard = Some(arboard::Clipboard::new().map_err(|e| e.to_string())?);
+                }
+                clipboard.as_mut().ok_or("clipboard unavailable")?.set_html(html, Some(text)).map_err(|e| e.to_string())
+            }
+        })),
         copy_html: Some(Box::new(move |html, text| {
             let mut clipboard = clipboard.borrow_mut();
             if clipboard.is_none() {

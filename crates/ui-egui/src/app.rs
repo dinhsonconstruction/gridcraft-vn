@@ -11,6 +11,7 @@ use super::{
     keytips, macro_ui, panes, pivot_pane, printing, ribbon, tabs, text_box, theme, widgets,
 };
 
+mod clip_image;
 mod clipboard;
 mod commands;
 mod editing;

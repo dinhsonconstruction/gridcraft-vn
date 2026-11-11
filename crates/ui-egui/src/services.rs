@@ -3,6 +3,7 @@ use super::printing;
 type PickSave = Box<dyn Fn(&str) -> Option<String>>;
 type OpenUrl = Box<dyn Fn(&str)>;
 type CopyHtml = Box<dyn FnMut(&str, &str) -> Result<(), String>>;
+type CopyRich = Box<dyn FnMut(&str, &str, Option<&[u8]>) -> Result<(), String>>;
 type Download = Box<dyn Fn(&str, &[u8])>;
 type PrintPdf = Box<dyn Fn(&[u8])>;
 
@@ -24,6 +25,9 @@ pub struct Services {
     /// Publish HTML and its plain-text alternative together. `Ok` means the host owns the
     /// write (including any asynchronous fallback); an immediate error uses egui's text path.
     pub copy_html: Option<CopyHtml>,
+    /// Publish HTML, plain-text, and an optional PNG snapshot of a multi-cell range together
+    /// (so chat apps like Zalo show a crisp table image preview while still offering Paste as text).
+    pub copy_rich: Option<CopyRich>,
     /// Read the HTML flavour of the system clipboard when the user pastes text, so cells the
     /// source spreadsheet recorded as numbers stay numbers ("Rp10,000.00" → 10000). `None` from
     /// the host pastes the plain text alone.
