@@ -186,7 +186,7 @@ mod tests {
             "{x}"
         );
         assert!(
-            x.contains(r#"<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface="ＭＳ Ｐゴシック"/><a:cs typeface=""/></a:minorFont>"#),
+            x.contains(r#"<a:minorFont><a:latin typeface="Times New Roman"/><a:ea typeface="ＭＳ Ｐゴシック"/><a:cs typeface=""/></a:minorFont>"#),
             "{x}"
         );
         assert_eq!(read_theme(&crate::xml::parse(x.as_bytes()).unwrap()), t);
@@ -196,8 +196,8 @@ mod tests {
     fn theme_without_ea_or_cs_writes_empty_attributes() {
         let t = Theme::default();
         let x = write_theme(&t);
-        assert!(x.contains(r#"<a:majorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>"#), "{x}");
-        assert!(x.contains(r#"<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont>"#), "{x}");
+        assert!(x.contains(r#"<a:majorFont><a:latin typeface="Times New Roman"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>"#), "{x}");
+        assert!(x.contains(r#"<a:minorFont><a:latin typeface="Times New Roman"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont>"#), "{x}");
     }
 
     #[test]
