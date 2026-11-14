@@ -391,41 +391,58 @@ impl TtfFont {
 }
 
 fn load_variant(style: usize) -> Option<TtfFont> {
-    let candidates: &[&str] = match style {
-        1 => &[
-            "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf",
-            "/Library/Fonts/Times New Roman Bold.ttf",
-            "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
-            "C:\\Windows\\Fonts\\timesbd.ttf",
-        ],
-        2 => &[
-            "/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf",
-            "/Library/Fonts/Times New Roman Italic.ttf",
-            "/System/Library/Fonts/Supplemental/Arial Italic.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf",
-            "C:\\Windows\\Fonts\\timesi.ttf",
-        ],
-        3 => &[
-            "/System/Library/Fonts/Supplemental/Times New Roman Bold Italic.ttf",
-            "/Library/Fonts/Times New Roman Bold Italic.ttf",
-            "/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSerif-BoldItalic.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSerif-BoldItalic.ttf",
-            "C:\\Windows\\Fonts\\timesbi.ttf",
-        ],
-        _ => &[
-            "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
-            "/Library/Fonts/Times New Roman.ttf",
-            "/System/Library/Fonts/Supplemental/Arial.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
-            "C:\\Windows\\Fonts\\times.ttf",
-        ],
+    let windir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".to_string());
+    let (win_times, win_arial, unix_candidates): (&str, &str, &[&str]) = match style {
+        1 => (
+            "timesbd.ttf",
+            "arialbd.ttf",
+            &[
+                "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf",
+                "/Library/Fonts/Times New Roman Bold.ttf",
+                "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+            ],
+        ),
+        2 => (
+            "timesi.ttf",
+            "ariali.ttf",
+            &[
+                "/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf",
+                "/Library/Fonts/Times New Roman Italic.ttf",
+                "/System/Library/Fonts/Supplemental/Arial Italic.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf",
+            ],
+        ),
+        3 => (
+            "timesbi.ttf",
+            "arialbi.ttf",
+            &[
+                "/System/Library/Fonts/Supplemental/Times New Roman Bold Italic.ttf",
+                "/Library/Fonts/Times New Roman Bold Italic.ttf",
+                "/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSerif-BoldItalic.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSerif-BoldItalic.ttf",
+            ],
+        ),
+        _ => (
+            "times.ttf",
+            "arial.ttf",
+            &[
+                "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+                "/Library/Fonts/Times New Roman.ttf",
+                "/System/Library/Fonts/Supplemental/Arial.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+            ],
+        ),
     };
-    for path in candidates {
+    let win_candidates = [
+        format!("{windir}\\Fonts\\{win_times}"),
+        format!("{windir}\\Fonts\\{win_arial}"),
+    ];
+    for path in win_candidates.iter().map(String::as_str).chain(unix_candidates.iter().copied()) {
         if let Ok(bytes) = std::fs::read(path)
             && let Some(font) = TtfFont::parse(&bytes)
         {

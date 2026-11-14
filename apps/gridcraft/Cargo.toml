@@ -49,6 +49,9 @@ arboard = { workspace = true, features = ["image-data", "wayland-data-control"] 
 [target.'cfg(target_os = "windows")'.dependencies]
 # Blocks on the start-up DirectX 12 adapter probe (`graphics.rs`); already in the tree via eframe.
 pollster = "1"
+# Safe Win32 clipboard wrapper (already in Cargo.lock via arboard) so copy_rich writes CF_UNICODETEXT,
+# HTML Format, PNG and CF_DIBV5 in one EmptyClipboard session for Zalo/Excel parity on Windows.
+clipboard-win = { version = "5.4.1", default-features = false, features = ["std"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { version = "0.21", default-features = false }

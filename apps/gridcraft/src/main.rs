@@ -170,6 +170,102 @@ fn write_macos_clipboard(html: &str, text: &str, png: Option<&[u8]>) -> Result<(
     }
 }
 
+/// Format an HTML fragment using Microsoft's Windows `HTML Format` (`CF_HTML` v0.9) byte-offset envelope.
+#[cfg(any(target_os = "windows", test))]
+fn wrap_win_cf_html(ctn: &str) -> String {
+    let h_version = "Version:0.9";
+    let h_start_html = "\r\nStartHTML:";
+    let h_end_html = "\r\nEndHTML:";
+    let h_start_frag = "\r\nStartFragment:";
+    let h_end_frag = "\r\nEndFragment:";
+    let c_start_frag = "\r\n<html>\r\n<body>\r\n<!--StartFragment-->\r\n";
+    let c_end_frag = "\r\n<!--EndFragment-->\r\n</body>\r\n</html>";
+    let h_len = h_version.len()
+        + h_start_html.len()
+        + 10
+        + h_end_html.len()
+        + 10
+        + h_start_frag.len()
+        + 10
+        + h_end_frag.len()
+        + 10;
+    let n_start_html = h_len + 2;
+    let n_start_frag = h_len + c_start_frag.len();
+    let n_end_frag = n_start_frag + ctn.len();
+    let n_end_html = n_end_frag + c_end_frag.len();
+    format!(
+        "{h_version}{h_start_html}{n_start_html:010}{h_end_html}{n_end_html:010}{h_start_frag}{n_start_frag:010}{h_end_frag}{n_end_frag:010}{c_start_frag}{ctn}{c_end_frag}"
+    )
+}
+
+/// Decode a PNG slice into a Windows `CF_DIBV5` payload (124-byte `BITMAPV5HEADER` + bottom-up BGRA pixels).
+#[cfg(any(target_os = "windows", test))]
+fn png_to_dibv5(png_bytes: &[u8]) -> Option<Vec<u8>> {
+    let rgba = image::load_from_memory_with_format(png_bytes, image::ImageFormat::Png).ok()?.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let width_i32 = i32::try_from(w).ok()?;
+    let height_i32 = i32::try_from(h).ok()?;
+    let pixel_bytes = w.checked_mul(h)?.checked_mul(4)?;
+    let total_bytes = 124usize.checked_add(usize::try_from(pixel_bytes).ok()?)?;
+
+    let mut out = Vec::with_capacity(total_bytes);
+    out.extend_from_slice(&124u32.to_le_bytes()); // bV5Size
+    out.extend_from_slice(&width_i32.to_le_bytes()); // bV5Width
+    out.extend_from_slice(&height_i32.to_le_bytes()); // bV5Height (positive = bottom-up DIB)
+    out.extend_from_slice(&1u16.to_le_bytes()); // bV5Planes
+    out.extend_from_slice(&32u16.to_le_bytes()); // bV5BitCount
+    out.extend_from_slice(&3u32.to_le_bytes()); // bV5Compression = BI_BITFIELDS
+    out.extend_from_slice(&pixel_bytes.to_le_bytes()); // bV5SizeImage
+    out.extend_from_slice(&[0u8; 16]); // XPelsPerMeter, YPelsPerMeter, ClrUsed, ClrImportant
+    out.extend_from_slice(&0x00FF_0000u32.to_le_bytes()); // bV5RedMask
+    out.extend_from_slice(&0x0000_FF00u32.to_le_bytes()); // bV5GreenMask
+    out.extend_from_slice(&0x0000_00FFu32.to_le_bytes()); // bV5BlueMask
+    out.extend_from_slice(&0xFF00_0000u32.to_le_bytes()); // bV5AlphaMask
+    out.extend_from_slice(&0x7352_4742u32.to_le_bytes()); // bV5CSType = LCS_sRGB
+    out.extend_from_slice(&[0u8; 36]); // bV5Endpoints
+    out.extend_from_slice(&[0u8; 12]); // bV5GammaRed/Green/Blue
+    out.extend_from_slice(&4u32.to_le_bytes()); // bV5Intent = LCS_GM_IMAGES
+    out.extend_from_slice(&[0u8; 12]); // bV5ProfileData, bV5ProfileSize, bV5Reserved
+    for y in (0..h).rev() {
+        for x in 0..w {
+            let [r, g, b, a] = rgba.get_pixel(x, y).0;
+            out.extend_from_slice(&[b, g, r, a]);
+        }
+    }
+    Some(out)
+}
+
+/// Write `PNG`, `CF_DIBV5`, `HTML Format`, and `CF_UNICODETEXT` to the Win32 clipboard in one
+/// `EmptyClipboard` session so Windows apps like Zalo PC show a table image preview while still
+/// offering text paste (matching Microsoft Excel).
+#[cfg(target_os = "windows")]
+fn write_windows_clipboard(html: &str, text: &str, png: Option<&[u8]>) -> Result<(), String> {
+    let _clip = clipboard_win::Clipboard::new_attempts(10).map_err(|e| e.to_string())?;
+    clipboard_win::raw::empty().map_err(|e| e.to_string())?;
+
+    if let Some(png_bytes) = png {
+        if let Some(png_fmt) = clipboard_win::register_format("PNG") {
+            let _ = clipboard_win::raw::set_without_clear(png_fmt.get(), png_bytes);
+        }
+        if let Some(dib) = png_to_dibv5(png_bytes) {
+            let _ = clipboard_win::raw::set_without_clear(clipboard_win::formats::CF_DIBV5, &dib);
+        }
+    }
+    let ok_html = clipboard_win::register_format("HTML Format").is_some_and(|fmt| {
+        let cf_html = wrap_win_cf_html(html);
+        clipboard_win::raw::set_without_clear(fmt.get(), cf_html.as_bytes()).is_ok()
+    });
+    let ok_text = clipboard_win::raw::set_string_with(text, clipboard_win::options::NoClear).is_ok();
+    if ok_html || ok_text {
+        Ok(())
+    } else {
+        Err("Win32 clipboard write failed".into())
+    }
+}
+
 /// Read the system clipboard through the shared handle, creating it on first use.
 fn read_clipboard<T>(
     handle: &RefCell<Option<arboard::Clipboard>>,
@@ -194,7 +290,12 @@ fn services() -> Services {
                 let _ = &rich_clipboard;
                 write_macos_clipboard(html, text, png)
             }
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "windows")]
+            {
+                let _ = &rich_clipboard;
+                write_windows_clipboard(html, text, png)
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             {
                 let _ = png;
                 let mut clipboard = rich_clipboard.borrow_mut();
@@ -505,5 +606,47 @@ mod packaging_tests {
         for ext in &mac {
             assert!(FileKind::from_path(&format!("book.{ext}")).is_some(), "GridCraft doesn't open .{ext}");
         }
+    }
+
+    #[test]
+    fn cf_html_header_offsets_match_fragment_boundaries() -> Result<(), String> {
+        let frag = "<table><tr><td>Xin chào Định Sơn</td></tr></table>";
+        let wrapped = super::wrap_win_cf_html(frag);
+        let bytes = wrapped.as_bytes();
+        let parse_offset = |label: &str| -> Result<usize, String> {
+            let line = wrapped
+                .lines()
+                .find(|l| l.starts_with(label))
+                .ok_or_else(|| format!("missing header {label}"))?;
+            line.trim_start_matches(label).parse::<usize>().map_err(|e| e.to_string())
+        };
+        let start_html = parse_offset("StartHTML:")?;
+        let end_html = parse_offset("EndHTML:")?;
+        let start_frag = parse_offset("StartFragment:")?;
+        let end_frag = parse_offset("EndFragment:")?;
+        assert!(bytes.get(start_html..start_html + 6) == Some(b"<html>"));
+        assert!(bytes.get(end_html - 7..end_html) == Some(b"</html>"));
+        assert!(bytes.get(start_frag..end_frag) == Some(frag.as_bytes()));
+        Ok(())
+    }
+
+    #[test]
+    fn png_to_dibv5_produces_valid_124_byte_header_and_bottom_up_bgra() -> Result<(), String> {
+        let raw = vec![
+            255, 0, 0, 255, 0, 255, 0, 128, // top row: red, semi-transparent green
+            0, 0, 255, 255, 255, 255, 255, 255, // bottom row: blue, white
+        ];
+        let img = image::RgbaImage::from_raw(2, 2, raw).ok_or("failed to build RGBA image")?;
+        let mut png = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut png, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+        let dib = super::png_to_dibv5(&png.into_inner()).ok_or("png_to_dibv5 returned None")?;
+        assert_eq!(dib.len(), 124 + 2 * 2 * 4);
+        assert_eq!(&dib[0..4], &124u32.to_le_bytes());
+        assert_eq!(&dib[4..8], &2i32.to_le_bytes());
+        assert_eq!(&dib[8..12], &2i32.to_le_bytes());
+        assert_eq!(&dib[14..16], &32u16.to_le_bytes());
+        assert_eq!(&dib[16..20], &3u32.to_le_bytes());
+        assert_eq!(&dib[124..140], &[255, 0, 0, 255, 255, 255, 255, 255, 0, 0, 255, 255, 0, 255, 0, 128]);
+        Ok(())
     }
 }

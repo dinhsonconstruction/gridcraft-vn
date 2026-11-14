@@ -344,15 +344,16 @@ pub(super) fn candidates(role: &str) -> Vec<(String, u32)> {
             add("/usr/share/fonts/liberation-sans-fonts/LiberationSans-Bold.ttf".into(), 0);
         }
         "cell" | "cell-bold" | "cell-italic" | "cell-bold-italic" => {
-            let tnr_mac = match role {
-                "cell" => "Times New Roman.ttf",
-                "cell-bold" => "Times New Roman Bold.ttf",
-                "cell-italic" => "Times New Roman Italic.ttf",
-                _ => "Times New Roman Bold Italic.ttf",
+            let (tnr_mac, tnr_win) = match role {
+                "cell" => ("Times New Roman.ttf", "times.ttf"),
+                "cell-bold" => ("Times New Roman Bold.ttf", "timesbd.ttf"),
+                "cell-italic" => ("Times New Roman Italic.ttf", "timesi.ttf"),
+                _ => ("Times New Roman Bold Italic.ttf", "timesbi.ttf"),
             };
             add(format!("{mac_sup}/{tnr_mac}"), 0);
             add(format!("/Library/Fonts/{tnr_mac}"), 0);
             add(home_fonts(tnr_mac), 0);
+            add(format!("{win}\\{tnr_win}"), 0);
             let (carlito, calibri_win, calibri_mac, arial_mac, arial_win, lib, dejavu) = match role {
                 "cell" => {
                     ("Carlito-Regular.ttf", "calibri.ttf", "Calibri.ttf", "Arial.ttf", "arial.ttf", "LiberationSans-Regular.ttf", "DejaVuSans.ttf")

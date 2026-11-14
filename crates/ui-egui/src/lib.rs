@@ -10,6 +10,7 @@
 /// prompt shows both, and an AppImage's menu entry gets the icon.
 #[cfg(not(target_arch = "wasm32"))]
 pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
+    repo: "dinhsonconstruction/gridcraft-vn",
     icon_png: Some(include_bytes!("../../../assets/app-icon/hicolor/128x128/apps/ai.storyteller.gridcraft.png")),
     accent: Some([0x1f, 0x9d, 0x55]),
     ..craft_update::suite::GRIDCRAFT
