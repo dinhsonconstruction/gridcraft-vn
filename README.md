@@ -374,3 +374,19 @@ Forks and modified versions must remove them.
   <a href="https://getartcraft.com/"><img alt="ArtCraft" src="docs/brand/artcraft-mark.svg" width="28"></a><br>
   <sub>Made by the <a href="https://getartcraft.com/">ArtCraft</a> team and community.</sub>
 </p>
+
+## Phiên bản Tiếng Việt (GridCraft VN — dinhsonconstruction/gridcraft-vn)
+
+Nhánh `vn-edition` được Công ty TNHH Xây dựng Định Sơn tùy biến sâu cho kỹ sư, kế toán và người dùng Việt Nam:
+
+- **Chuẩn hành chính Việt Nam mặc định**: Font mặc định `Times New Roman` 11 pt, khổ in mặc định `A4`, dò font hệ thống qua `%WINDIR%\Fonts` và macOS/Linux.
+- **Hàm bảng tính tiếng Việt tích hợp**: Hỗ trợ `DOCSO` / `VND` (đọc số thành chữ tiếng Việt), `TCVN3` / `VNI` chuyển đổi bảng mã tiếng Việt ngay trong bảng tính, cùng bộ hàm Excel tương thích.
+- **Sao chép giàu định dạng cho Zalo & Office**: Hỗ trợ copy vùng bảng tính dưới dạng ảnh PNG (`CF_DIBV5` trên Windows) và bảng HTML (`CF_HTML`) để dán trực tiếp vào Zalo, WordCraft, Excel.
+- **Bộ cài Windows (`.exe` / NSIS) & Build với `craft-fonts-vn`**:
+  ```bash
+  export CRAFT_FONTS_DIR=/path/to/craft-fonts-vn
+  export CRAFT_FONTS_REQUIRED=1
+  cargo build --release -p gridcraft
+  ```
+- **Kiểm tra cập nhật**: `UPDATE_APP` trỏ trực tiếp về [`dinhsonconstruction/gridcraft-vn`](https://github.com/dinhsonconstruction/gridcraft-vn).
+
